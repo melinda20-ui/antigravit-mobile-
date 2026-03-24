@@ -33,8 +33,8 @@ Write-Host "Preparing network environment..." -ForegroundColor Yellow
 # Get Gateway IP for Socat
 $WinWslIp = (wsl --exec bash -c "ip -4 route show default | cut -d' ' -f3").Trim()
 
-# Reset old bridges and add new Antigravity bridge
-netsh interface portproxy reset | Out-Null
+# Remove old bridge and add new Antigravity bridge
+netsh interface portproxy delete v4tov4 listenport=7801 listenaddress=0.0.0.0 | Out-Null
 netsh interface portproxy add v4tov4 listenport=7801 listenaddress=0.0.0.0 connectport=7800 connectaddress=127.0.0.1 | Out-Null
 New-NetFirewallRule -DisplayName "OmniChat_Dev_CDP" -Direction Inbound -LocalPort 7801 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
 
@@ -88,7 +88,7 @@ wsl --exec bash -c "pkill -f ngrok; pkill -f socat; pkill -f node" 2>$null
 if ($WslProcess) { Stop-Process -Id $WslProcess.Id -Force -ErrorAction SilentlyContinue }
 Stop-Process -Name $AgProcessName -Force -ErrorAction SilentlyContinue
 
-netsh interface portproxy reset | Out-Null
+netsh interface portproxy delete v4tov4 listenport=7801 listenaddress=0.0.0.0 | Out-Null
 Remove-NetFirewallRule -DisplayName "OmniChat_Dev_CDP" -ErrorAction SilentlyContinue
 
 Write-Host "Cleanup complete." -ForegroundColor Green
