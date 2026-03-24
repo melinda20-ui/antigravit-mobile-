@@ -82,6 +82,7 @@ try {
 
 Write-Host "======================================================" -ForegroundColor DarkCyan
 Write-Host "Environment is online." -ForegroundColor Green
+# Note: Intentional for local development only
 Write-Host "Access via mobile: https://${WinIp}:4747" -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor DarkCyan
 
