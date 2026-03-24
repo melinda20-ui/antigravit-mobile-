@@ -10,8 +10,8 @@ The PowerShell scripts handle firewall permissions, temporary IP forwarding via 
 
 1. **Create the configuration file**  
    Rename or copy the provided `config.json.example` to `config.json`:
-   ```bash
-   cp config.json.example config.json
+   ```powershell
+   Copy-Item config.json.example config.json
    ```
 2. **Set your local paths** in the new `config.json`:
    ```json
