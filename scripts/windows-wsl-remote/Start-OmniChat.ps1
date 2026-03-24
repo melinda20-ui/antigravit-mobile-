@@ -93,7 +93,7 @@ Read-Host "Press ENTER to terminate processes and clean up rules"
 Write-Host "Cleaning up..." -ForegroundColor Cyan
 
 # Terminate Socat in WSL
-wsl --exec bash -c "pkill socat" 2>$null
+wsl --exec bash -c "pkill -f 'socat TCP-LISTEN:7800'" 2>$null
 
 # Close processes
 if ($WslProcess -ne $null) { Stop-Process -Id $WslProcess.Id -Force -ErrorAction SilentlyContinue }

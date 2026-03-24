@@ -84,7 +84,7 @@ $Finalizar = Read-Host "Press ENTER to terminate all processes and clean up"
 
 # 4. CLEANUP PROTOCOL
 Write-Host "Terminating processes and cleaning ports..." -ForegroundColor Cyan
-wsl --exec bash -c "pkill -f ngrok; pkill -f socat; pkill -f node" 2>$null
+wsl --exec bash -c "pkill -f 'ngrok http https://localhost:4747'; pkill -f 'socat TCP-LISTEN:7800'" 2>$null
 if ($WslProcess) { Stop-Process -Id $WslProcess.Id -Force -ErrorAction SilentlyContinue }
 Stop-Process -Name $AgProcessName -Force -ErrorAction SilentlyContinue
 
