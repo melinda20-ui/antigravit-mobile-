@@ -9,6 +9,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { sendTelegramNotification } from './utils/telegram.js';
 
 // Load .env from the package's own directory (not the cwd where npx runs)
 const _ownDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -31,7 +32,8 @@ import WebSocket from 'ws';
 // ─── Module Imports ─────────────────────────────────────────────────
 import {
     PROJECT_ROOT, PORTS, CONTAINER_IDS, SERVER_PORT, POLL_INTERVAL,
-    APP_PASSWORD, COOKIE_SECRET, AUTH_SALT, AUTH_COOKIE_NAME, VERSION
+    APP_PASSWORD, COOKIE_SECRET, AUTH_SALT, AUTH_COOKIE_NAME, VERSION,
+    JSON_BODY_LIMIT, AUTO_TUNNEL_PROVIDER
 } from './config.js';
 import * as state from './state.js';
 import { getLocalIP, isLocalRequest, getJson } from './utils/network.js';
@@ -39,6 +41,23 @@ import { killPortProcess, launchAntigravity } from './utils/process.js';
 import { hashString } from './utils/hash.js';
 import { discoverCDP, discoverAllCDP, connectCDP, initCDP } from './cdp/connection.js';
 import { inspectUI } from './ui_inspector.js';
+import {
+    ensureWorkspaceData,
+    getGitSummary,
+    gitAdd,
+    gitCommit,
+    gitPush,
+    listWorkspace,
+    loadQuickCommands,
+    readWorkspaceFile,
+    saveQuickCommands,
+    saveUploadedImage,
+    terminalManager,
+    workspaceRoot,
+    uploadsDir
+} from './utils/workspace.js';
+import { aiSupervisor } from './supervisor.js';
+import { CloudflareTunnelManager } from '../scripts/cloudflare-tunnel.js';
 
 // ─── Mutable State ──────────────────────────────────────────────────
 
@@ -59,6 +78,185 @@ let activeTargetId = null;
 
 /** @type {string} */
 let AUTH_TOKEN = 'ag_default_token';
+
+/** @type {import('ws').WebSocketServer | null} */
+let websocketServer = null;
+
+const serverStartedAt = new Date().toISOString();
+const MAX_SERVER_LOGS = 250;
+const serverLogs = [];
+const tunnelManager = new CloudflareTunnelManager();
+let tunnelProvider = '';
+
+const screenStreamState = {
+    active: false,
+    startedAt: '',
+    lastFrameAt: '',
+    listener: null
+};
+
+/**
+ * @param {any} value
+ * @returns {string}
+ */
+function serializeLogArg(value) {
+    if (value instanceof Error) {
+        return value.stack || value.message;
+    }
+    if (typeof value === 'string') {
+        return value;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch (_) {
+        return String(value);
+    }
+}
+
+for (const level of /** @type {const} */ (['log', 'info', 'warn', 'error'])) {
+    const original = console[level].bind(console);
+    console[level] = (...args) => {
+        serverLogs.push({
+            level,
+            message: args.map(serializeLogArg).join(' '),
+            timestamp: new Date().toISOString()
+        });
+        if (serverLogs.length > MAX_SERVER_LOGS) {
+            serverLogs.shift();
+        }
+        original(...args);
+    };
+}
+
+/**
+ * @param {number} [limit]
+ * @returns {Array<{level: string, message: string, timestamp: string}>}
+ */
+function getServerLogs(limit = 80) {
+    return serverLogs.slice(-Math.max(1, limit));
+}
+
+/**
+ * Broadcast a JSON payload to connected mobile clients.
+ *
+ * @param {object} payload
+ * @returns {void}
+ */
+function broadcast(payload) {
+    if (!websocketServer) return;
+    const serialized = JSON.stringify(payload);
+    websocketServer.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(serialized);
+        }
+    });
+}
+
+/**
+ * @returns {number}
+ */
+function getOpenClientCount() {
+    if (!websocketServer) return 0;
+    let count = 0;
+    websocketServer.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) count++;
+    });
+    return count;
+}
+
+/**
+ * @returns {{active: boolean, startedAt: string, lastFrameAt: string}}
+ */
+function getScreencastStatus() {
+    return {
+        active: screenStreamState.active,
+        startedAt: screenStreamState.startedAt,
+        lastFrameAt: screenStreamState.lastFrameAt
+    };
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function stopScreencast() {
+    if (cdpConnection && screenStreamState.active) {
+        try {
+            if (screenStreamState.listener) {
+                cdpConnection.off('Page.screencastFrame', screenStreamState.listener);
+            }
+            await cdpConnection.call('Page.stopScreencast', {});
+        } catch (_) {
+            // Ignore stop errors during reconnect or target switches.
+        }
+    }
+
+    screenStreamState.active = false;
+    screenStreamState.startedAt = '';
+    screenStreamState.lastFrameAt = '';
+    screenStreamState.listener = null;
+    broadcast({ type: 'screen_status', status: getScreencastStatus() });
+}
+
+/**
+ * @returns {Promise<{active: boolean, startedAt: string, lastFrameAt: string}>}
+ */
+async function startScreencast() {
+    if (!cdpConnection) {
+        throw new Error('CDP disconnected');
+    }
+
+    if (screenStreamState.active) {
+        return getScreencastStatus();
+    }
+
+    await cdpConnection.call('Page.enable', {});
+
+    screenStreamState.listener = async (params) => {
+        screenStreamState.lastFrameAt = new Date().toISOString();
+        broadcast({
+            type: 'screen_frame',
+            data: params.data,
+            format: 'image/jpeg',
+            timestamp: screenStreamState.lastFrameAt
+        });
+        try {
+            await cdpConnection?.call('Page.screencastFrameAck', { sessionId: params.sessionId });
+        } catch (_) {
+            // Ignore acknowledgements during reconnect.
+        }
+    };
+
+    cdpConnection.on('Page.screencastFrame', screenStreamState.listener);
+    await cdpConnection.call('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 60,
+        maxWidth: 1280,
+        maxHeight: 900,
+        everyNthFrame: 1
+    });
+
+    screenStreamState.active = true;
+    screenStreamState.startedAt = new Date().toISOString();
+    screenStreamState.lastFrameAt = '';
+    broadcast({ type: 'screen_status', status: getScreencastStatus() });
+    return getScreencastStatus();
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function maybeStartAutoTunnel() {
+    if (AUTO_TUNNEL_PROVIDER !== 'cloudflare') return;
+    if (tunnelManager.getStatus().active) return;
+
+    tunnelProvider = 'cloudflare';
+    try {
+        const url = await tunnelManager.start(Number(SERVER_PORT));
+        console.log(`☁️ Cloudflare tunnel ready: ${url}`);
+    } catch (error) {
+        console.warn(`⚠️ Cloudflare tunnel failed: ${error.message}`);
+    }
+}
 
 // ─── CDP Action Functions ───────────────────────────────────────────
 // These functions contain large template-literal scripts injected into
@@ -1238,6 +1436,51 @@ async function getAppState(cdp) {
     return { error: 'Context failed' };
 }
 
+/**
+ * Identify and click the waiting action button (Accept/Run/Allow vs Reject/Deny)
+ * @param {import('./state.js').CDPConnection} cdp
+ * @param {'accept' | 'reject'} action
+ * @returns {Promise<{success?: boolean, error?: string}>}
+ */
+async function completePendingAction(cdp, action) {
+    const isAccept = action === 'accept';
+    const EXP = `(async () => {
+        try {
+            const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+            const acceptTexts = ['run command', 'allow', 'accept', 'run', 'yes', 'confirm'];
+            const rejectTexts = ['reject', 'deny', 'cancel', 'no', 'abort'];
+            
+            const targetTexts = ${isAccept} ? acceptTexts : rejectTexts;
+            
+            const targetBtn = allBtns.find(btn => {
+                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                return targetTexts.some(t => text === t) && btn.offsetParent !== null;
+            });
+            
+            if (targetBtn) {
+                targetBtn.click();
+                return { success: true };
+            }
+            return { error: 'Action button not found' };
+        } catch (e) {
+            return { error: e.toString() };
+        }
+    })()`;
+
+    for (const ctx of cdp.contexts) {
+        try {
+            const res = await cdp.call("Runtime.evaluate", {
+                expression: EXP,
+                returnByValue: true,
+                awaitPromise: true,
+                contextId: ctx.id
+            });
+            if (res.result?.value) return res.result.value;
+        } catch (e) {}
+    }
+    return { error: 'Context failed' };
+}
+
 // hashString → src/utils/hash.js
 // isLocalRequest → src/utils/network.js
 // initCDP → src/cdp/connection.js
@@ -1254,6 +1497,9 @@ async function startPolling(wss) {
     const MAX_RECONNECT_DELAY = 30000;
     let reconnectAttempts = 0;
     let heartbeatInterval = null;
+    let lastNotificationTime = 0;
+    let lastActionNotificationTime = 0;
+    let lastAutoApprovalTime = 0;
 
     // WebSocket ping/pong heartbeat (every 30s)
     heartbeatInterval = setInterval(() => {
@@ -1266,16 +1512,16 @@ async function startPolling(wss) {
 
     // Broadcast CDP status to all mobile clients
     function broadcastCDPStatus(status) {
-        const msg = JSON.stringify({ type: 'cdp_status', status, timestamp: new Date().toISOString() });
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) client.send(msg);
-        });
+        broadcast({ type: 'cdp_status', status, timestamp: new Date().toISOString() });
     }
 
     const poll = async () => {
         // Periodically refresh available targets list (multi-window)
         try {
             availableTargets = await discoverAllCDP();
+            if (!activeTargetId && availableTargets.length === 1) {
+                activeTargetId = availableTargets[0].id;
+            }
         } catch (e) { /* ignore */ }
 
         if (!cdpConnection || (cdpConnection.ws && cdpConnection.ws.readyState !== WebSocket.OPEN)) {
@@ -1286,10 +1532,11 @@ async function startPolling(wss) {
             }
             if (cdpConnection) {
                 console.log('🔄 CDP connection lost. Attempting to reconnect...');
+                await stopScreencast();
                 cdpConnection = null;
             }
             try {
-                await initCDP();
+                cdpConnection = await initCDP();
                 if (cdpConnection) {
                     console.log('✅ CDP Connection established from polling loop');
                     isConnecting = false;
@@ -1313,17 +1560,87 @@ async function startPolling(wss) {
             if (snapshot && !snapshot.error) {
                 const hash = hashString(snapshot.html);
 
+                // --- NEW: Intercept Text indicating Agent Terminated or Quota ---
+                const htmlLower = snapshot.html.toLowerCase();
+                const nowTime = Date.now();
+                
+                // 1. Check for Pending Actions (e.g., Run command) with specific cooldown
+                let hasPendingAction = false;
+                if (htmlLower.includes('run command') && (htmlLower.includes('reject') || htmlLower.includes('deny'))) {
+                    hasPendingAction = true;
+                    if (nowTime - lastAutoApprovalTime > 15000) {
+                        try {
+                            const decision = await aiSupervisor.shouldApprove({ html: snapshot.html });
+                            if (decision.approved) {
+                                const approval = await completePendingAction(cdpConnection, 'accept');
+                                if (approval.success) {
+                                    lastAutoApprovalTime = nowTime;
+                                    lastActionNotificationTime = nowTime;
+                                    broadcast({
+                                        type: 'notification',
+                                        event: 'action_auto_approved',
+                                        message: `Supervisor local aprovou a acao pendente (${decision.reason}).`,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                    sendTelegramNotification('✅ <b>Antigravity Supervisor:</b> uma aprovacao segura foi liberada automaticamente.');
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Supervisor check failed: ${error.message}`);
+                        }
+                    }
+
+                    if (nowTime - lastActionNotificationTime > 15000 && nowTime - lastAutoApprovalTime > 5000) { // 15 sec cooldown
+                        lastActionNotificationTime = nowTime;
+                        const msg = 'Agent requires approval format (Run Command).';
+                        broadcast({
+                            type: 'notification',
+                            event: 'action_required',
+                            message: msg,
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log(`⚠️ Alert triggered: Action Pending`);
+                        sendTelegramNotification('⚠️ <b>Antigravity Action Required!</b>\\nO Agente parou a execução e aguarda aprovação manual.');
+                    }
+                }
+
+                // 2. Check for Quota or Termination with specific cooldown
+                if (nowTime - lastNotificationTime > 60000) { // 1 min cooldown
+                    let notifyType = null;
+                    let notifyMessage = '';
+                    if (htmlLower.includes('model quota reached') || htmlLower.includes('usage limit')) {
+                        notifyType = 'quota_error';
+                        notifyMessage = 'Model Quota Exceeded!';
+                    } else if (htmlLower.includes('agent terminated') || htmlLower.includes('agent stopped')) {
+                        notifyType = 'agent_error';
+                        notifyMessage = 'Agent Terminated or Blocked!';
+                    } else if (htmlLower.includes('task completed') && htmlLower.includes('i have completed the task')) {
+                        notifyType = 'task_completed';
+                        notifyMessage = 'Task Completed Successfully!';
+                    }
+                    
+                    if (notifyType) {
+                        lastNotificationTime = nowTime;
+                        broadcast({
+                            type: 'notification',
+                            event: notifyType,
+                            message: notifyMessage,
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log(`⚠️ Alert triggered: ${notifyMessage}`);
+                        
+                        const emoji = notifyType === 'task_completed' ? '✅' : '🚨';
+                        sendTelegramNotification(`${emoji} <b>Antigravity Notification:</b> ${notifyMessage}`);
+                    }
+                }
+                // ---------------------------------------------------------------
+
                 if (hash !== lastSnapshotHash) {
                     lastSnapshot = snapshot;
                     lastSnapshotHash = hash;
-
-                    wss.clients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                type: 'snapshot_update',
-                                timestamp: new Date().toISOString()
-                            }));
-                        }
+                    broadcast({
+                        type: 'snapshot_update',
+                        timestamp: new Date().toISOString()
                     });
 
                     console.log(`📸 Snapshot updated(hash: ${hash})`);
@@ -1355,6 +1672,7 @@ async function startPolling(wss) {
 // Create Express app
 async function createServer() {
     const app = express();
+    await ensureWorkspaceData();
 
     // Check for SSL certificates
     const keyPath = join(PROJECT_ROOT, 'certs', 'server.key');
@@ -1376,6 +1694,19 @@ async function createServer() {
     }
 
     const wss = new WebSocketServer({ server });
+    websocketServer = wss;
+    terminalManager.on('output', (entry) => {
+        broadcast({ type: 'terminal_output', entry });
+    });
+    terminalManager.on('exit', (terminalState) => {
+        broadcast({ type: 'terminal_state', state: terminalState });
+    });
+    tunnelManager.on('url', () => {
+        broadcast({ type: 'tunnel_status', status: tunnelManager.getStatus(), timestamp: new Date().toISOString() });
+    });
+    tunnelManager.on('exit', () => {
+        broadcast({ type: 'tunnel_status', status: tunnelManager.getStatus(), timestamp: new Date().toISOString() });
+    });
 
     // Initialize session security & token
     AUTH_TOKEN = hashString(APP_PASSWORD + AUTH_SALT + Date.now().toString());
@@ -1391,7 +1722,7 @@ async function createServer() {
     }
 
     app.use(compression());
-    app.use(express.json());
+    app.use(express.json({ limit: JSON_BODY_LIMIT }));
     app.use(cookieParser(COOKIE_SECRET));
 
     // Ngrok Bypass Middleware
@@ -1403,8 +1734,12 @@ async function createServer() {
 
     // Auth Middleware
     app.use((req, res, next) => {
-        const publicPaths = ['/login', '/login.html', '/favicon.ico'];
-        if (publicPaths.includes(req.path) || req.path.startsWith('/css/')) {
+        const publicPaths = ['/login', '/login.html', '/favicon.ico', '/manifest.json', '/sw.js'];
+        if (
+            publicPaths.includes(req.path) ||
+            req.path.startsWith('/css/') ||
+            req.path.startsWith('/icons/')
+        ) {
             return next();
         }
 
@@ -1437,6 +1772,15 @@ async function createServer() {
         }
     });
 
+    app.get('/admin', (req, res) => {
+        res.sendFile(join(PROJECT_ROOT, 'public', 'admin.html'));
+    });
+
+    app.get('/minimal', (req, res) => {
+        res.sendFile(join(PROJECT_ROOT, 'public', 'minimal.html'));
+    });
+
+    app.use('/uploads', express.static(uploadsDir));
     app.use(express.static(join(PROJECT_ROOT, 'public')));
 
     // Login endpoint
@@ -1476,7 +1820,10 @@ async function createServer() {
             cdpConnected: cdpConnection?.ws?.readyState === 1, // WebSocket.OPEN = 1
             uptime: process.uptime(),
             timestamp: new Date().toISOString(),
-            https: hasSSL
+            https: hasSSL,
+            clients: getOpenClientCount(),
+            tunnel: tunnelManager.getStatus(),
+            version: VERSION
         });
     });
 
@@ -1544,6 +1891,14 @@ async function createServer() {
         res.json(result);
     });
 
+    // Interact with pending actions (Accept/Reject)
+    app.post('/api/interact-action', async (req, res) => {
+        const { action } = req.body;
+        if (!cdpConnection) return res.status(503).json({ error: 'CDP disconnected' });
+        const result = await completePendingAction(cdpConnection, action);
+        res.json(result);
+    });
+
     // Send message
     app.post('/send', async (req, res) => {
         const { message } = req.body;
@@ -1565,6 +1920,225 @@ async function createServer() {
             method: result.method || 'attempted',
             details: result
         });
+    });
+
+    // Quick Commands
+    app.get('/api/quick-commands', async (req, res) => {
+        try {
+            const commands = await loadQuickCommands();
+            res.json({ commands });
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Workspace file browser
+    app.get('/api/fs/ls', async (req, res) => {
+        try {
+            const data = await listWorkspace(String(req.query.path || '.'));
+            res.json(data);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.get('/api/fs/cat', async (req, res) => {
+        try {
+            const data = await readWorkspaceFile(String(req.query.path || ''));
+            res.json(data);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    // Remote terminal
+    app.get('/api/terminal/history', (req, res) => {
+        res.json(terminalManager.getState());
+    });
+
+    app.post('/api/terminal/run', async (req, res) => {
+        try {
+            const data = await terminalManager.run(String(req.body.command || ''));
+            res.json(data);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/terminal/stop', async (req, res) => {
+        const result = await terminalManager.stop();
+        res.json(result);
+    });
+
+    // Git panel
+    app.get('/api/git/status', async (req, res) => {
+        try {
+            const summary = await getGitSummary();
+            res.json(summary);
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/git/add', async (req, res) => {
+        try {
+            const result = await gitAdd(Array.isArray(req.body.paths) ? req.body.paths : []);
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/git/commit', async (req, res) => {
+        try {
+            const result = await gitCommit(String(req.body.message || ''));
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/git/push', async (req, res) => {
+        try {
+            const result = await gitPush();
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    // Screencast status + controls
+    app.get('/api/screencast/status', (req, res) => {
+        res.json(getScreencastStatus());
+    });
+
+    app.post('/api/screencast/start', async (req, res) => {
+        try {
+            const status = await startScreencast();
+            res.json(status);
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/screencast/stop', async (req, res) => {
+        await stopScreencast();
+        res.json(getScreencastStatus());
+    });
+
+    // Image upload bridge
+    app.post('/api/upload-image', async (req, res) => {
+        try {
+            const { data, mimeType, name, prompt = '', inject = true } = req.body || {};
+            if (!data) {
+                return res.status(400).json({ error: 'Image base64 data is required' });
+            }
+
+            const cleanData = String(data).replace(/^data:[^;]+;base64,/, '');
+            const saved = await saveUploadedImage({
+                name,
+                mimeType,
+                data: cleanData
+            });
+
+            let injection = null;
+            if (inject) {
+                if (!cdpConnection) {
+                    return res.status(503).json({ error: 'CDP not connected', upload: saved });
+                }
+
+                const composedPrompt = [
+                    prompt ? String(prompt).trim() : 'Please inspect this uploaded image.',
+                    '',
+                    `![mobile-upload](${saved.dataUrl})`
+                ].join('\n').trim();
+
+                injection = await injectMessage(cdpConnection, composedPrompt);
+            }
+
+            res.json({
+                success: true,
+                upload: saved,
+                injection
+            });
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    // Admin endpoints
+    app.get('/api/admin/logs', (req, res) => {
+        const limit = Number(req.query.limit || 80);
+        res.json({ logs: getServerLogs(limit) });
+    });
+
+    app.get('/api/admin/metrics', async (req, res) => {
+        try {
+            const commands = await loadQuickCommands();
+            res.json({
+                startedAt: serverStartedAt,
+                uptime: process.uptime(),
+                version: VERSION,
+                https: hasSSL,
+                workspaceRoot,
+                wsClients: getOpenClientCount(),
+                cdpConnected: cdpConnection?.ws?.readyState === WebSocket.OPEN,
+                cdpContexts: cdpConnection?.contexts.length || 0,
+                availableTargets,
+                activeTargetId,
+                lastSnapshotStats: lastSnapshot?.stats || null,
+                terminal: terminalManager.getState(),
+                tunnel: {
+                    provider: tunnelProvider,
+                    ...tunnelManager.getStatus()
+                },
+                supervisor: aiSupervisor.getStatus(),
+                screencast: getScreencastStatus(),
+                quickCommandsCount: commands.length,
+                recentLogs: getServerLogs(40)
+            });
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    app.put('/api/admin/quick-commands', async (req, res) => {
+        try {
+            const commands = await saveQuickCommands(req.body.commands);
+            broadcast({ type: 'quick_commands_updated', commands, timestamp: new Date().toISOString() });
+            res.json({ commands });
+        } catch (error) {
+            res.status(400).json({ error: error.message });
+        }
+    });
+
+    app.get('/api/admin/tunnel', (req, res) => {
+        res.json({
+            provider: tunnelProvider,
+            ...tunnelManager.getStatus()
+        });
+    });
+
+    app.post('/api/admin/tunnel/start', async (req, res) => {
+        const provider = String(req.body.provider || 'cloudflare').toLowerCase();
+        if (provider !== 'cloudflare') {
+            return res.status(400).json({ error: 'Only cloudflare quick tunnels are supported' });
+        }
+
+        tunnelProvider = provider;
+        try {
+            const url = await tunnelManager.start(Number(SERVER_PORT));
+            broadcast({ type: 'tunnel_status', status: tunnelManager.getStatus(), timestamp: new Date().toISOString() });
+            res.json({ success: true, url, provider });
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    app.post('/api/admin/tunnel/stop', async (req, res) => {
+        await tunnelManager.stop();
+        broadcast({ type: 'tunnel_status', status: tunnelManager.getStatus(), timestamp: new Date().toISOString() });
+        res.json({ success: true, provider: tunnelProvider, ...tunnelManager.getStatus() });
     });
 
     // UI Inspection endpoint - Returns all buttons as JSON for debugging
@@ -1798,6 +2372,19 @@ async function createServer() {
 
         console.log('📱 Client connected (Authenticated)');
 
+        ws.send(JSON.stringify({
+            type: 'terminal_state',
+            state: terminalManager.getState()
+        }));
+        ws.send(JSON.stringify({
+            type: 'screen_status',
+            status: getScreencastStatus()
+        }));
+        ws.send(JSON.stringify({
+            type: 'tunnel_status',
+            status: tunnelManager.getStatus()
+        }));
+
         ws.on('close', () => {
             console.log('📱 Client disconnected');
         });
@@ -1809,7 +2396,7 @@ async function createServer() {
 // Main
 async function main() {
     try {
-        await initCDP();
+        cdpConnection = await initCDP();
     } catch (err) {
         console.warn(`⚠️  Initial CDP discovery failed: ${err.message}`);
         console.log('💡 Start Antigravity with --remote-debugging-port=7800 to connect.');
@@ -1849,6 +2436,7 @@ async function main() {
             try {
                 // Close existing connection
                 if (cdpConnection?.ws) {
+                    await stopScreencast();
                     cdpConnection.ws.close();
                     cdpConnection = null;
                 }
@@ -1963,6 +2551,7 @@ async function main() {
             console.log(`  ${GR}${B}▸${R} ${WH}${B}Server${R}     ${CY}${url}${R}`);
             console.log(`  ${GR}${B}▸${R} ${WH}${B}Protocol${R}   ${hasSSL ? `${GR}HTTPS 🔒` : 'HTTP'}${R}`);
             console.log(`  ${GR}${B}▸${R} ${WH}${B}CDP${R}        ${DIM}ports 7800-7803${R}`);
+            console.log(`  ${GR}${B}▸${R} ${WH}${B}Workspace${R}  ${DIM}${workspaceRoot}${R}`);
             console.log('');
             console.log(line);
             console.log('');
@@ -1970,11 +2559,15 @@ async function main() {
             console.log(`  ${DIM}🪟 Multi-window switching supported${R}`);
             console.log(`  ${DIM}⏹  Press Ctrl+C to stop${R}`);
             console.log('');
+
+            maybeStartAutoTunnel();
         });
 
         // Graceful shutdown handlers
-        const gracefulShutdown = (signal) => {
+        const gracefulShutdown = async (signal) => {
             console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+            await stopScreencast();
+            await tunnelManager.stop();
             wss.close(() => {
                 console.log('   WebSocket server closed');
             });
@@ -1988,8 +2581,8 @@ async function main() {
             setTimeout(() => process.exit(0), 1000);
         };
 
-        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
+        process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
 
     } catch (err) {
         console.error('❌ Fatal error:', err.message);

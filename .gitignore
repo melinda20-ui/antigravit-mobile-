@@ -29,6 +29,8 @@ Thumbs.db
 dist/
 build/
 .DS_Store
+data/uploads/*
+!data/uploads/.gitkeep
 
 # SSL Certificates (generated locally)
 certs/

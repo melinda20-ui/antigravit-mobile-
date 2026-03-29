@@ -13,6 +13,7 @@
  *  7. WebSocket connectivity
  */
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -20,6 +21,7 @@ import { execSync, spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, '..');
 
 // --- Config ---
 const CDP_PORTS = [7800, 7801, 7802, 7803];
@@ -41,7 +43,12 @@ function section(title) { console.log(`\n${c.cyan}${c.bold}▸ ${title}${c.reset
 
 function httpGet(url, timeout = 3000) {
     return new Promise((resolve, reject) => {
-        const req = http.get(url, { timeout }, (res) => {
+        const target = new URL(url);
+        const client = target.protocol === 'https:' ? https : http;
+        const req = client.get(url, {
+            timeout,
+            rejectUnauthorized: false
+        }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }));
@@ -83,7 +90,7 @@ async function main() {
     } catch { fail('npm not found'); }
 
     // .env file
-    const envPath = join(__dirname, '.env');
+    const envPath = join(PROJECT_ROOT, '.env');
     if (fs.existsSync(envPath)) {
         pass('.env file exists');
         const envContent = fs.readFileSync(envPath, 'utf8');
@@ -103,7 +110,7 @@ async function main() {
     // ─── 2. Dependencies ──────────────────────────────────────
     section('Dependencies');
 
-    const nodeModules = join(__dirname, 'node_modules');
+    const nodeModules = join(PROJECT_ROOT, 'node_modules');
     if (fs.existsSync(nodeModules)) {
         pass('node_modules/ directory exists');
     } else {
@@ -120,10 +127,16 @@ async function main() {
     // ─── 3. Syntax Validation ─────────────────────────────────
     section('Syntax Validation');
 
-    const filesToCheck = ['src/server.js', 'launcher.js'];
+    const filesToCheck = [
+        'src/server.js',
+        'src/supervisor.js',
+        'src/utils/workspace.js',
+        'scripts/cloudflare-tunnel.js',
+        'launcher.js'
+    ];
     for (const file of filesToCheck) {
         try {
-            execSync(`node --check ${file}`, { cwd: __dirname, stdio: 'pipe' });
+            execSync(`node --check ${file}`, { cwd: PROJECT_ROOT, stdio: 'pipe' });
             pass(`${file} — syntax OK`);
         } catch (e) {
             fail(`${file} — syntax error: ${e.stderr?.toString().trim()}`);
@@ -132,11 +145,27 @@ async function main() {
 
     // Check required frontend files
     const frontendFiles = [
-        'public/index.html', 'public/login.html',
-        'public/js/app.js', 'public/css/style.css'
+        'public/index.html',
+        'public/login.html',
+        'public/admin.html',
+        'public/minimal.html',
+        'public/manifest.json',
+        'public/sw.js',
+        'public/js/app.js',
+        'public/js/admin.js',
+        'public/js/minimal.js',
+        'public/js/components/file-browser.js',
+        'public/js/components/terminal-view.js',
+        'public/js/components/git-panel.js',
+        'public/js/vendor/morphdom-lite.js',
+        'public/css/style.css',
+        'public/css/variables.css',
+        'public/css/themes.css',
+        'public/css/layout.css',
+        'public/css/components.css'
     ];
     for (const f of frontendFiles) {
-        if (fs.existsSync(join(__dirname, f))) pass(`${f} exists`);
+        if (fs.existsSync(join(PROJECT_ROOT, f))) pass(`${f} exists`);
         else fail(`${f} missing`);
     }
 
@@ -186,8 +215,13 @@ async function main() {
     if (!serverPortFree) {
         warn('Skipping server test — port in use');
     } else {
+        const sslEnabled = fs.existsSync(join(PROJECT_ROOT, 'certs', 'server.key')) &&
+            fs.existsSync(join(PROJECT_ROOT, 'certs', 'server.cert'));
+        const baseProtocol = sslEnabled ? 'https' : 'http';
+        const wsProtocol = sslEnabled ? 'wss' : 'ws';
+
         const serverProc = spawn('node', ['src/server.js'], {
-            cwd: __dirname,
+            cwd: PROJECT_ROOT,
             env: { ...process.env, PORT: String(SERVER_PORT) },
             stdio: 'pipe'
         });
@@ -197,18 +231,18 @@ async function main() {
 
         try {
             // Test main page
-            const mainRes = await httpGet(`http://127.0.0.1:${SERVER_PORT}/`);
+            const mainRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/`);
             if (mainRes.status === 200) pass(`GET / → 200 (main page)`);
             else if (mainRes.status === 302 || mainRes.status === 301) pass(`GET / → ${mainRes.status} (redirect to login)`);
             else fail(`GET / → ${mainRes.status}`);
 
             // Test snapshot endpoint
-            const snapRes = await httpGet(`http://127.0.0.1:${SERVER_PORT}/snapshot`);
+            const snapRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/snapshot`);
             if (snapRes.status === 200 || snapRes.status === 503) pass(`GET /snapshot → ${snapRes.status} (expected)`);
             else fail(`GET /snapshot → ${snapRes.status}`);
 
             // Test CDP targets endpoint
-            const targetsRes = await httpGet(`http://127.0.0.1:${SERVER_PORT}/cdp-targets`);
+            const targetsRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/cdp-targets`);
             if (targetsRes.status === 200) {
                 const data = JSON.parse(targetsRes.data);
                 pass(`GET /cdp-targets → 200 (${data.targets?.length || 0} targets)`);
@@ -217,12 +251,12 @@ async function main() {
             }
 
             // Test app-state endpoint
-            const stateRes = await httpGet(`http://127.0.0.1:${SERVER_PORT}/app-state`);
+            const stateRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/app-state`);
             if (stateRes.status === 200) pass(`GET /app-state → 200`);
             else fail(`GET /app-state → ${stateRes.status}`);
 
             // Test login page
-            const loginRes = await httpGet(`http://127.0.0.1:${SERVER_PORT}/login.html`);
+            const loginRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/login.html`);
             if (loginRes.status === 200) pass(`GET /login.html → 200`);
             else fail(`GET /login.html → ${loginRes.status}`);
 
@@ -233,7 +267,9 @@ async function main() {
         // Test WebSocket
         try {
             const { default: WebSocket } = await import('ws');
-            const ws = new WebSocket(`ws://127.0.0.1:${SERVER_PORT}`);
+            const ws = new WebSocket(`${wsProtocol}://127.0.0.1:${SERVER_PORT}`, sslEnabled ? {
+                rejectUnauthorized: false
+            } : undefined);
             await new Promise((resolve, reject) => {
                 ws.on('open', () => {
                     pass('WebSocket connection → OK');

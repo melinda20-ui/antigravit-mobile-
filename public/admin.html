@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>OmniAntigravity Admin</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <script>
+      document.documentElement.dataset.theme =
+        localStorage.getItem("omni-theme") || "dark";
+    </script>
+  </head>
+  <body>
+    <div class="admin-shell">
+      <header class="admin-header">
+        <div class="admin-brand">
+          <h1>Admin Panel</h1>
+          <div class="admin-subtitle">
+            Server health, tunnel control and quick command management
+          </div>
+        </div>
+        <div class="screen-actions">
+          <a class="ghost-link" href="/">Back to Chat</a>
+          <button class="panel-btn" id="adminRefreshBtn">Refresh</button>
+        </div>
+      </header>
+
+      <main class="admin-main">
+        <div class="admin-grid">
+          <section class="admin-card">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Runtime</div>
+                <div class="panel-subtitle">Server, CDP and WebSocket metrics</div>
+              </div>
+            </div>
+            <div class="meta-grid" id="adminMetaGrid"></div>
+          </section>
+
+          <section class="admin-card">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Tunnel</div>
+                <div class="panel-subtitle">Cloudflare Quick Tunnel control</div>
+              </div>
+            </div>
+            <div class="admin-actions">
+              <button class="panel-btn primary" id="tunnelStartBtn">Start Cloudflare</button>
+              <button class="panel-btn danger" id="tunnelStopBtn">Stop Tunnel</button>
+            </div>
+            <div class="code-preview" id="adminTunnelStatus">No active tunnel.</div>
+          </section>
+
+          <section class="admin-card">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Quick Commands</div>
+                <div class="panel-subtitle">These buttons appear in the mobile composer</div>
+              </div>
+              <div class="screen-actions">
+                <button class="panel-btn" id="adminAddCommandBtn">Add</button>
+                <button class="panel-btn primary" id="adminSaveCommandsBtn">Save</button>
+              </div>
+            </div>
+            <div class="quick-command-fields" id="quickCommandsEditor"></div>
+          </section>
+
+          <section class="admin-card">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Recent Logs</div>
+                <div class="panel-subtitle">Server-side runtime log tail</div>
+              </div>
+            </div>
+            <pre class="admin-log-list" id="adminLogs">Loading logs...</pre>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="/js/admin.js"></script>
+  </body>
+</html>

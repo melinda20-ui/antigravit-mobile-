@@ -96,6 +96,8 @@ export async function connectCDP(url) {
     const pendingCalls = new Map();
     /** @type {Array<{id: number, name: string, origin: string}>} */
     const contexts = [];
+    /** @type {Map<string, Set<(params: any) => void>>} */
+    const eventListeners = new Map();
 
     // Single centralized message handler
     ws.on('message', (msg) => {
@@ -119,6 +121,16 @@ export async function connectCDP(url) {
             } else if (data.method === 'Runtime.executionContextsCleared') {
                 contexts.length = 0;
             }
+
+            if (data.method && eventListeners.has(data.method)) {
+                for (const handler of eventListeners.get(data.method) || []) {
+                    try {
+                        handler(data.params);
+                    } catch (_) {
+                        // Ignore listener errors to preserve the CDP connection.
+                    }
+                }
+            }
         } catch (_) { /* malformed message */ }
     });
 
@@ -136,17 +148,36 @@ export async function connectCDP(url) {
         ws.send(JSON.stringify({ id, method, params }));
     });
 
+    /**
+     * @param {string} event
+     * @param {(params: any) => void} handler
+     */
+    const on = (event, handler) => {
+        if (!eventListeners.has(event)) {
+            eventListeners.set(event, new Set());
+        }
+        eventListeners.get(event)?.add(handler);
+    };
+
+    /**
+     * @param {string} event
+     * @param {(params: any) => void} handler
+     */
+    const off = (event, handler) => {
+        eventListeners.get(event)?.delete(handler);
+    };
+
     await call('Runtime.enable', {});
     await new Promise(r => setTimeout(r, 1000));
 
-    return { ws, call, contexts };
+    return { ws, call, contexts, on, off };
 }
 
 /**
  * Initialize CDP connection — discover and connect.
  * Updates shared state with the new connection.
  *
- * @returns {Promise<void>}
+ * @returns {Promise<import('../state.js').CDPConnection>}
  */
 export async function initCDP() {
     console.log('🔍 Discovering Antigravity CDP endpoint...');
@@ -157,4 +188,5 @@ export async function initCDP() {
     const conn = await connectCDP(cdpInfo.url);
     state.setCdpConnection(conn);
     console.log(`✅ Connected! Found ${conn.contexts.length} execution contexts\n`);
+    return conn;
 }

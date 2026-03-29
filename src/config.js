@@ -31,6 +31,9 @@ export const EXCLUDED_TARGET_TITLES = ['launchpad', 'settings'];
 export const SERVER_PORT = process.env.PORT || 4747;
 export const POLL_INTERVAL = 1000;
 export const CDP_CALL_TIMEOUT = 30000;
+export const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '15mb';
+export const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || PROJECT_ROOT;
+export const AUTO_TUNNEL_PROVIDER = (process.env.AUTO_TUNNEL_PROVIDER || '').toLowerCase();
 
 // ─── Auth ───────────────────────────────────────────────────────────
 
@@ -41,4 +44,4 @@ export const AUTH_COOKIE_NAME = 'omni_ag_auth';
 
 // ─── Version ────────────────────────────────────────────────────────
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.0';

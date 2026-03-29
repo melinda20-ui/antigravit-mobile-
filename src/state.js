@@ -10,6 +10,8 @@
  * @property {import('ws')} ws - WebSocket connection
  * @property {Array<{id: number, name: string, origin: string, auxData?: {frameId?: string, isDefault?: boolean}}>} contexts - Execution contexts
  * @property {(method: string, params?: object) => Promise<any>} call - CDP method caller
+ * @property {(event: string, handler: (params: any) => void) => void} on - Event listener registration
+ * @property {(event: string, handler: (params: any) => void) => void} off - Event listener removal
  */
 
 /**

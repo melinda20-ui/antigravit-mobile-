@@ -5,13 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-29
+
+### Added
+
+- 📲 **Phase 3: PWA & UI Modernization** — Added `manifest.json`, `sw.js`, a modular CSS architecture, theme persistence (dark, light, slate) and a new `minimal.html` Lite Mode for unstable connections.
+- 🧰 **Phase 4: Remote Workspace** — Added mobile file browsing, syntax-highlighted file preview, remote terminal streaming, Git actions and live desktop screencast controls.
+- 🛠️ **Phase 5: Admin & Tunnel Control** — Added `/admin`, server/runtime metrics, Cloudflare Quick Tunnel orchestration, persistent quick commands in `/data/quick-commands.json` and `.gitleaks.toml`.
+- 🤖 **Phase 6: AI Optimization** — Added incremental morph diff rendering, `/api/upload-image`, a local Ollama-backed `AISupervisor` and safe auto-approval integration for pending actions.
+
+## [1.0.3] - 2026-03-29
+
+### Added
+
+- 🤖 **Phase 2: Remote Autonomy (Human-in-the-loop)** — The mobile interface now detects when the LLM halts to await user permission (e.g. CLI operations). It displays a priority alert modal with 1-tap "Accept" or "Reject" actions directly from the smartphone.
+- 📱 **Telegram Bot Integration** — Embedded native push notification alerts via Telegram. The system automatically messages the linked smartphone when critical events arise, such as "Agent Blocks/Quotas", unhandled "Pending Approvals", or "Task Completed Successfully".
+- 🔌 **Action Interaction API** — Added `/api/interact-action` endpoint on the server side to deterministically trigger DOM elements corresponding to UI permissions on the Antigravity desktop client.
+- 🎉 **Task Completion Hook** — Enhanced DOM polling loops to scan conversational structures for explicit task completion indicators.
+
+## [1.0.2] - 2026-03-29
+
+### Added
+
+- 📊 **Phase 1: Quota Monitoring UI** — Added visual integration within the settings bar for tracking API usage targets.
+- 🔔 **Slide-in Notification System** — Developed a clean, non-intrusive alert layer on the frontend.
+- 🛑 **Autonomous Error Interceptor** — The Node.js WebSocket backend now reads the live DOM stream to automatically extract errors ("Agent terminated", "Model quota reached") and pushes slide-in notifications to the user remotely.
+
 ## [1.0.1] - 2026-03-01
 
 ### Added
 
 - 🌐 29-language README translations (pt-BR, es, fr, it, ru, zh-CN, de, ja, in, th, uk-UA, ar, vi, bg, da, fi, he, hu, id, ko, ms, nl, no, pt, ro, pl, sk, sv, phi)
 - 🏳️ Language bar with 30 flag emojis in README.md header
-- 📝 Reusable PRD prompt for multi-language documentation (`docs/PRD_MULTI_LANGUAGE.md`)
+- 📝 Reusable PRD prompt for multi-language documentation
 
 ## [0.5.3] - 2026-02-28
 

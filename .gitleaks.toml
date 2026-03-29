@@ -1,0 +1,24 @@
+title = "omni-antigravity-remote-chat"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram bot token"
+regex = '''(?i)(telegram(_bot)?_token|bot token)\s*[:=]\s*["']?[0-9]{8,12}:[A-Za-z0-9_-]{20,}["']?'''
+tags = ["key", "telegram"]
+
+[[rules]]
+id = "env-secret-assignment"
+description = "High-risk environment secret assignment"
+regex = '''(?i)(app_password|cookie_secret|auth_salt|ngrok_authtoken|ollama_supervisor_(model|url)|telegram_chat_id|telegram_bot_token)\s*=\s*.+'''
+tags = ["env", "secret"]
+
+[allowlist]
+description = "Example files and docs may contain placeholders"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)README(\.[A-Za-z-]+)?\.md$''',
+  '''(^|/)docs/.*\.md$'''
+]

@@ -3,7 +3,7 @@
 /**
  * OmniAntigravity Remote Chat — Node.js Launcher
  * Replaces launcher.py with pure Node.js implementation.
- * Supports local (Wi-Fi) and web (ngrok) modes.
+ * Supports local (Wi-Fi) and web (Cloudflare Quick Tunnel with ngrok fallback) modes.
  *
  * @module launcher
  */
@@ -44,7 +44,7 @@ function banner() {
     console.log(`${c.magenta}${c.bold}  ║   OmniAntigravity Remote Chat            ║${c.reset}`);
     console.log(`${c.magenta}${c.bold}  ║   Mobile Remote Control for AI Sessions  ║${c.reset}`);
     console.log(`${c.magenta}${c.bold}  ╚══════════════════════════════════════════╝${c.reset}`);
-    console.log(`${c.dim}  Mode: ${mode === 'web' ? '🌐 Web (ngrok)' : '📶 Local (Wi-Fi)'}${c.reset}`);
+    console.log(`${c.dim}  Mode: ${mode === 'web' ? '🌐 Web (Cloudflare / ngrok)' : '📶 Local (Wi-Fi)'}${c.reset}`);
     console.log('');
 }
 
@@ -92,6 +92,34 @@ async function startNgrok(port) {
 }
 
 /**
+ * Poll the local tunnel status endpoint until a public URL is available.
+ *
+ * @param {number} port
+ * @returns {Promise<string>}
+ */
+async function waitForCloudflareTunnel(port) {
+    const timeoutAt = Date.now() + 25000;
+
+    while (Date.now() < timeoutAt) {
+        try {
+            const response = await fetch(`http://127.0.0.1:${port}/api/admin/tunnel`);
+            if (response.ok) {
+                const payload = await response.json();
+                if (payload.url) {
+                    return payload.url;
+                }
+            }
+        } catch (_) {
+            // Server may still be booting.
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    throw new Error('Cloudflare tunnel did not become ready in time');
+}
+
+/**
  * Main entry point.
  * @returns {Promise<void>}
  */
@@ -111,18 +139,29 @@ async function main() {
 
     // Start the Node.js server
     console.log(`${c.blue}  ▶ Starting server...${c.reset}`);
+    const serverEnv = { ...process.env };
+    if (mode === 'web') {
+        serverEnv.AUTO_TUNNEL_PROVIDER = serverEnv.AUTO_TUNNEL_PROVIDER || 'cloudflare';
+    }
     const server = spawn('node', [join(__dirname, 'src', 'server.js')], {
         cwd: __dirname,
         stdio: 'inherit',
-        env: { ...process.env }
+        env: serverEnv
     });
 
     // Wait for server to be ready
     await new Promise(r => setTimeout(r, 2000));
 
     if (mode === 'web') {
-        console.log(`${c.blue}  ▶ Starting ngrok tunnel...${c.reset}`);
-        const publicUrl = await startNgrok(parseInt(String(port)));
+        let publicUrl = '';
+        try {
+            console.log(`${c.blue}  ▶ Waiting for Cloudflare Quick Tunnel...${c.reset}`);
+            publicUrl = await waitForCloudflareTunnel(parseInt(String(port)));
+        } catch (error) {
+            console.log(`${c.yellow}  ⚠ Cloudflare tunnel unavailable: ${error.message}${c.reset}`);
+            console.log(`${c.blue}  ▶ Falling back to ngrok...${c.reset}`);
+            publicUrl = await startNgrok(parseInt(String(port)));
+        }
         console.log('');
         console.log(`${c.green}${c.bold}  ✓ Web Access Ready!${c.reset}`);
         console.log(`${c.cyan}  → ${publicUrl}${c.reset}`);
