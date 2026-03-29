@@ -91,17 +91,25 @@
           <span>Workspace</span>
           <strong id="workspaceStatusText">Closed</strong>
         </button>
+        <button class="setting-chip" id="sessionStatsBtn">
+          <span>Session</span>
+          <strong id="sessionStatsText">0 msg</strong>
+        </button>
+        <button class="setting-chip" id="suggestionsBtn">
+          <span>Suggest</span>
+          <strong id="suggestionsText">Off</strong>
+        </button>
         <button class="setting-chip" id="quotaBtn">
           <span>Limits</span>
           <strong id="quotaText">Check</strong>
         </button>
-        <div class="setting-chip" style="cursor: default">
+        <div class="setting-chip setting-chip-static">
           <span>Sync</span>
           <strong id="statsText">Waiting...</strong>
         </div>
       </div>
 
-      <div class="ssl-banner" id="sslBanner" style="display: none">
+      <div class="ssl-banner" id="sslBanner">
         <span>Not secure yet. Enable HTTPS for clipboard and PWA install quality.</span>
         <div class="screen-actions">
           <button class="panel-btn primary" id="enableHttpsBtn">Enable HTTPS</button>
@@ -124,7 +132,7 @@
             <div>
               <div class="panel-title">Remote Workspace</div>
               <div class="panel-subtitle">
-                Files, terminal, Git and screen stream
+                Files, terminal, Git, stats, timeline and screen stream
               </div>
             </div>
             <button class="panel-btn" id="workspaceCloseBtn">Close</button>
@@ -134,6 +142,9 @@
             <button class="workspace-tab active" data-panel="files">Files</button>
             <button class="workspace-tab" data-panel="terminal">Terminal</button>
             <button class="workspace-tab" data-panel="git">Git</button>
+            <button class="workspace-tab" data-panel="assist">Assist</button>
+            <button class="workspace-tab" data-panel="stats">Stats</button>
+            <button class="workspace-tab" data-panel="timeline">Timeline</button>
             <button class="workspace-tab" data-panel="screen">Screen</button>
           </div>
 
@@ -141,6 +152,9 @@
             <section class="workspace-panel active" id="workspacePanel-files"></section>
             <section class="workspace-panel" id="workspacePanel-terminal"></section>
             <section class="workspace-panel" id="workspacePanel-git"></section>
+            <section class="workspace-panel" id="workspacePanel-assist"></section>
+            <section class="workspace-panel" id="workspacePanel-stats"></section>
+            <section class="workspace-panel" id="workspacePanel-timeline"></section>
             <section class="workspace-panel" id="workspacePanel-screen">
               <div class="workspace-section">
                 <div class="workspace-card">
@@ -211,7 +225,7 @@
       <div class="modal-panel">
         <div class="modal-title" id="modalTitle">Select</div>
         <div id="modalList"></div>
-        <div class="screen-actions" style="margin-top: 16px">
+        <div class="screen-actions modal-actions">
           <button class="panel-btn" id="modalCancelBtn">Close</button>
         </div>
       </div>
@@ -228,7 +242,7 @@
           <div class="panel-title">Conversations</div>
           <div class="panel-subtitle">Switch or start a new chat</div>
         </div>
-        <div style="width: 38px"></div>
+        <div class="history-header-spacer"></div>
       </div>
       <div class="history-content" id="historyList"></div>
     </div>

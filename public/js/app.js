@@ -2,6 +2,9 @@ import morphdom from './vendor/morphdom-lite.js';
 import { FileBrowser } from './components/file-browser.js';
 import { TerminalView } from './components/terminal-view.js';
 import { GitPanel } from './components/git-panel.js';
+import { StatsPanel } from './components/stats-panel.js';
+import { AssistPanel } from './components/assist-panel.js';
+import { TimelinePanel } from './components/timeline-panel.js';
 
 const MODELS = [
   'Gemini 3.1 Pro (High)',
@@ -12,7 +15,13 @@ const MODELS = [
   'GPT-OSS 120B (Medium)',
 ];
 
-const THEMES = ['dark', 'light', 'slate'];
+const THEMES = [
+  { value: 'dark', label: 'Dark' },
+  { value: 'light', label: 'Light' },
+  { value: 'slate', label: 'Slate' },
+  { value: 'pastel', label: 'Pastel' },
+  { value: 'rainbow', label: 'Rainbow' },
+];
 const USER_SCROLL_LOCK_DURATION = 15000;
 const SCROLL_SYNC_DEBOUNCE = 150;
 
@@ -32,15 +41,20 @@ const modeBtn = document.getElementById('modeBtn');
 const modelBtn = document.getElementById('modelBtn');
 const targetBtn = document.getElementById('targetBtn');
 const themeBtn = document.getElementById('themeBtn');
+const suggestionsBtn = document.getElementById('suggestionsBtn');
 const quotaBtn = document.getElementById('quotaBtn');
 const modeText = document.getElementById('modeText');
 const modelText = document.getElementById('modelText');
 const targetText = document.getElementById('targetText');
 const themeText = document.getElementById('themeText');
+const suggestionsText = document.getElementById('suggestionsText');
+const quotaText = document.getElementById('quotaText');
 const workspaceLayer = document.getElementById('workspaceLayer');
 const workspaceToggleBtn = document.getElementById('workspaceToggleBtn');
 const workspaceStatusText = document.getElementById('workspaceStatusText');
 const workspaceCloseBtn = document.getElementById('workspaceCloseBtn');
+const sessionStatsBtn = document.getElementById('sessionStatsBtn');
+const sessionStatsText = document.getElementById('sessionStatsText');
 const quickActions = document.getElementById('quickActions');
 const modalOverlay = document.getElementById('modalOverlay');
 const modalTitle = document.getElementById('modalTitle');
@@ -71,11 +85,20 @@ const state = {
   snapshotReloadPending: false,
   lastScrollSync: 0,
   quickCommands: [],
+  suggestMode: false,
+  pendingSuggestions: 0,
+  suggestions: [],
   screenActive: false,
+  sessionStats: null,
+  quota: null,
+  timeline: null,
   panelInitialized: {
     files: false,
     terminal: false,
     git: false,
+    assist: false,
+    stats: false,
+    timeline: false,
   },
 };
 
@@ -91,9 +114,39 @@ const gitPanel = new GitPanel(document.getElementById('workspacePanel-git'), {
   fetchWithAuth,
   notify: showSlideInNotification,
 });
+const assistPanel = new AssistPanel(
+  document.getElementById('workspacePanel-assist'),
+  {
+    fetchWithAuth,
+    notify: showSlideInNotification,
+    onAction: handleAssistAction,
+    getContext: () => ({
+      sessionStats: state.sessionStats,
+      pendingSuggestions: state.pendingSuggestions,
+      quota: state.quota,
+    }),
+  }
+);
+const statsPanel = new StatsPanel(document.getElementById('workspacePanel-stats'), {
+  fetchWithAuth,
+  notify: showSlideInNotification,
+});
+const timelinePanel = new TimelinePanel(document.getElementById('workspacePanel-timeline'), {
+  fetchWithAuth,
+  notify: showSlideInNotification,
+});
 
 let scrollSyncTimeout = null;
 let idleTimer = null;
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
 
 async function fetchWithAuth(url, options = {}) {
   const nextOptions = { ...options };
@@ -107,8 +160,135 @@ async function fetchWithAuth(url, options = {}) {
 }
 
 function updateThemeLabel() {
-  themeText.textContent =
-    state.currentTheme.charAt(0).toUpperCase() + state.currentTheme.slice(1);
+  const match = THEMES.find((theme) => theme.value === state.currentTheme);
+  themeText.textContent = match?.label || 'Dark';
+}
+
+function updateSuggestionLabel() {
+  if (!suggestionsText) return;
+  suggestionsText.textContent = state.suggestMode
+    ? `${state.pendingSuggestions} Pending`
+    : 'Off';
+  suggestionsBtn?.classList.toggle('active', state.suggestMode || state.pendingSuggestions > 0);
+}
+
+function updateSessionStatsLabel() {
+  if (!sessionStatsText) return;
+  const metrics = state.sessionStats?.metrics || {};
+  const uptime = state.sessionStats?.uptime || '0s';
+  const messages = Number(metrics.messagesSent || 0);
+  const errors = Number(metrics.errorsDetected || 0);
+  sessionStatsText.textContent = `${uptime} · ${messages} msg · ${errors} err`;
+  sessionStatsBtn?.classList.toggle('active', messages > 0 || errors > 0);
+  assistPanel.renderContextSummary();
+}
+
+function buildQuotaBar(usagePercent, width = 10) {
+  const clamped = Math.max(0, Math.min(100, Number(usagePercent) || 0));
+  const filled = Math.round((clamped / 100) * width);
+  return `${'▓'.repeat(filled)}${'░'.repeat(width - filled)}`;
+}
+
+function updateQuotaLabel() {
+  if (!quotaText) return;
+  if (!state.quota) {
+    quotaText.textContent = 'Check';
+    quotaBtn?.classList.remove('active');
+    return;
+  }
+
+  if (!state.quota.available) {
+    quotaText.textContent = state.quota.enabled ? 'Offline' : 'Off';
+    quotaBtn?.classList.remove('active');
+    return;
+  }
+
+  quotaText.textContent =
+    state.quota.criticalModels > 0
+      ? `${state.quota.criticalModels} Hot`
+      : `${state.quota.highestUsagePercent || 0}% Max`;
+  quotaBtn?.classList.toggle(
+    'active',
+    state.quota.criticalModels > 0 || state.quota.warningModels > 0
+  );
+  assistPanel.renderContextSummary();
+}
+
+function setSuggestionState(payload = {}) {
+  state.suggestMode = Boolean(payload.suggestMode);
+  state.pendingSuggestions = Number(payload.pendingCount || 0);
+  state.suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : state.suggestions;
+  updateSuggestionLabel();
+  assistPanel.renderContextSummary();
+  if (state.sessionStats) {
+    setStatsState({
+      ...state.sessionStats,
+      pendingSuggestions: state.pendingSuggestions,
+    });
+  }
+}
+
+function setStatsState(stats) {
+  if (!stats) return;
+  state.sessionStats = {
+    ...stats,
+    pendingSuggestions: Number(
+      stats.pendingSuggestions ?? state.pendingSuggestions ?? 0
+    ),
+  };
+  updateSessionStatsLabel();
+  statsPanel.handleState(state.sessionStats);
+}
+
+async function loadSessionStats() {
+  try {
+    const response = await fetchWithAuth('/api/stats');
+    const payload = await response.json();
+    setStatsState(payload);
+  } catch (_) {}
+}
+
+function setQuotaState(quota) {
+  if (!quota) return;
+  state.quota = quota;
+  updateQuotaLabel();
+}
+
+async function loadQuota() {
+  try {
+    const response = await fetchWithAuth('/api/quota');
+    const payload = await response.json();
+    setQuotaState(payload);
+    return payload;
+  } catch (error) {
+    setQuotaState({
+      available: false,
+      enabled: false,
+      error: error.message,
+      criticalModels: 0,
+      warningModels: 0,
+      highestUsagePercent: 0,
+      models: [],
+    });
+    return null;
+  }
+}
+
+function setTimelineState(timeline) {
+  if (!timeline) return;
+  state.timeline = timeline;
+  timelinePanel.handleState(timeline);
+}
+
+async function loadTimeline() {
+  try {
+    const response = await fetchWithAuth('/api/timeline');
+    const payload = await response.json();
+    setTimelineState(payload);
+    return payload;
+  } catch (_) {
+    return state.timeline;
+  }
 }
 
 function applyTheme(theme, persist = true) {
@@ -135,7 +315,7 @@ function registerServiceWorker() {
 async function checkSslStatus() {
   if (window.location.protocol === 'https:') return;
   if (localStorage.getItem('sslBannerDismissed')) return;
-  sslBanner.style.display = 'flex';
+  sslBanner.classList.add('show');
 }
 
 async function enableHttps() {
@@ -158,7 +338,7 @@ async function enableHttps() {
 }
 
 function dismissSslBanner() {
-  sslBanner.style.display = 'none';
+  sslBanner.classList.remove('show');
   localStorage.setItem('sslBannerDismissed', 'true');
 }
 
@@ -180,7 +360,7 @@ function showSlideInNotification(message, type = 'info') {
   const alert = document.createElement('div');
   alert.className = `slide-in-alert ${type}`;
   alert.innerHTML = `
-    <div style="flex:1">${message}</div>
+    <div class="alert-message">${message}</div>
     <button class="panel-btn" type="button">Dismiss</button>
   `;
   alert.querySelector('button').addEventListener('click', () => alert.remove());
@@ -200,7 +380,7 @@ function showActionRequiredPrompt(message) {
   layer.innerHTML = `
     <div class="modal-panel">
       <div class="modal-title">Action Required</div>
-      <div class="panel-subtitle" style="margin-bottom: 16px">${message}</div>
+      <div class="panel-subtitle modal-copy">${message}</div>
       <div class="screen-actions">
         <button class="panel-btn danger" data-action="reject">Reject</button>
         <button class="panel-btn primary" data-action="accept">Accept</button>
@@ -234,6 +414,250 @@ async function handleActionInteract(action, button) {
   } finally {
     document.getElementById('action-prompt-layer')?.remove();
   }
+}
+
+async function loadSuggestions() {
+  try {
+    const response = await fetchWithAuth('/api/suggestions/pending');
+    const payload = await response.json();
+    setSuggestionState(payload);
+  } catch (_) {}
+}
+
+function formatSuggestionLabel(suggestion) {
+  const verb = suggestion.action === 'accept' ? 'Approve' : 'Reject';
+  const command = String(suggestion.command || 'Pending action')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const summary = command.length > 64 ? `${command.slice(0, 64)}…` : command;
+  return `${verb} · ${summary}`;
+}
+
+function showSuggestionPrompt(suggestion) {
+  if (!suggestion?.id) return;
+  document.getElementById('suggestion-prompt-layer')?.remove();
+
+  const actionLabel = suggestion.action === 'accept' ? 'Approve' : 'Reject';
+  const layer = document.createElement('div');
+  layer.id = 'suggestion-prompt-layer';
+  layer.className = 'modal-overlay show';
+  layer.innerHTML = `
+    <div class="modal-panel">
+      <div class="modal-title">Supervisor Suggestion</div>
+      <div class="panel-subtitle modal-copy">${escapeHtml(
+        suggestion.summary || `The supervisor recommends ${actionLabel.toLowerCase()}ing this pending action.`
+      )}</div>
+      <div class="code-preview">${escapeHtml(suggestion.command || 'Pending action')}</div>
+      <div class="panel-subtitle modal-copy">Reason: <code>${escapeHtml(suggestion.reason || 'manual-review')}</code></div>
+      <div class="screen-actions">
+        <button class="panel-btn" data-decision="reject">Reject Suggestion</button>
+        <button class="panel-btn primary" data-decision="approve">${actionLabel} Suggestion</button>
+      </div>
+    </div>
+  `;
+
+  layer.querySelectorAll('button[data-decision]').forEach((button) => {
+    button.addEventListener('click', () =>
+      handleSuggestionDecision(suggestion.id, button.getAttribute('data-decision'), button)
+    );
+  });
+  layer.addEventListener('click', (event) => {
+    if (event.target === layer) {
+      layer.remove();
+    }
+  });
+
+  document.body.appendChild(layer);
+}
+
+function formatQuotaSummary(quota) {
+  if (!quota?.available) {
+    return quota?.error || 'Quota data is unavailable right now.';
+  }
+
+  const lines = [];
+  if (quota.user?.planName) {
+    lines.push(`Plan: ${quota.user.planName}`);
+  }
+  if (quota.credits?.prompt) {
+    lines.push(
+      `Prompt credits: ${quota.credits.prompt.usagePercent}% used (${quota.credits.prompt.used}/${quota.credits.prompt.monthly})`
+    );
+  }
+  if (quota.credits?.flow) {
+    lines.push(
+      `Flow credits: ${quota.credits.flow.usagePercent}% used (${quota.credits.flow.used}/${quota.credits.flow.monthly})`
+    );
+  }
+  if (lines.length) {
+    lines.push('');
+  }
+
+  (quota.models || []).forEach((model) => {
+    lines.push(`${model.name}`);
+    lines.push(
+      `${buildQuotaBar(model.usagePercent)} ${model.usagePercent}% used · ${model.remainingPercent}% left`
+    );
+    if (model.resetTime) {
+      lines.push(`Reset ${new Date(model.resetTime).toLocaleTimeString()}`);
+    }
+    lines.push('');
+  });
+
+  lines.push(
+    `Critical: ${quota.criticalModels || 0}/${quota.totalModels || 0} · Updated ${quota.lastUpdated ? new Date(quota.lastUpdated).toLocaleTimeString() : 'unknown'}`
+  );
+  return lines.join('\n').trim();
+}
+
+function showQuotaPrompt(quota) {
+  document.getElementById('quota-prompt-layer')?.remove();
+
+  const layer = document.createElement('div');
+  layer.id = 'quota-prompt-layer';
+  layer.className = 'modal-overlay show';
+  layer.innerHTML = `
+    <div class="modal-panel">
+      <div class="modal-title">Model Quota</div>
+      <div class="panel-subtitle modal-copy">${
+        quota?.available
+          ? `${quota.totalModels || 0} models tracked from the local language server`
+          : 'Quota service status'
+      }</div>
+      <pre class="code-preview">${escapeHtml(formatQuotaSummary(quota))}</pre>
+      <div class="screen-actions">
+        <button class="panel-btn" data-action="close">Close</button>
+        <button class="panel-btn primary" data-action="refresh">Refresh</button>
+      </div>
+    </div>
+  `;
+
+  layer.querySelector('[data-action="close"]')?.addEventListener('click', () => {
+    layer.remove();
+  });
+  layer
+    .querySelector('[data-action="refresh"]')
+    ?.addEventListener('click', async () => {
+      const latest = await loadQuota();
+      showQuotaPrompt(latest || state.quota);
+    });
+  layer.addEventListener('click', (event) => {
+    if (event.target === layer) {
+      layer.remove();
+    }
+  });
+  document.body.appendChild(layer);
+}
+
+async function handleAssistAction(action) {
+  if (!action?.type) return;
+
+  if (action.type === 'approve_suggestion' || action.type === 'reject_suggestion') {
+    await loadSuggestions();
+    const suggestion = state.suggestions[0];
+    if (!suggestion) {
+      showSlideInNotification('No pending suggestions available.', 'warning');
+      return;
+    }
+
+    const response = await fetchWithAuth(
+      action.type === 'approve_suggestion'
+        ? `/api/suggestions/${encodeURIComponent(suggestion.id)}/approve`
+        : `/api/suggestions/${encodeURIComponent(suggestion.id)}/reject`,
+      { method: 'POST' }
+    );
+    const payload = await response.json();
+    if (!payload.success) {
+      throw new Error(payload.error || 'Suggestion action failed');
+    }
+    showSlideInNotification(
+      action.type === 'approve_suggestion'
+        ? 'Latest suggestion approved.'
+        : 'Latest suggestion rejected.',
+      action.type === 'approve_suggestion' ? 'success' : 'warning'
+    );
+    await loadSuggestions();
+    await loadSessionStats();
+    return;
+  }
+
+  if (action.type === 'show_suggestions') {
+    await showSuggestionsQueue();
+    return;
+  }
+
+  if (action.type === 'refresh_quota') {
+    const quota = await loadQuota();
+    showQuotaPrompt(quota || state.quota);
+    return;
+  }
+
+  if (action.type === 'open_stats') {
+    await toggleWorkspace(true);
+    await setWorkspacePanel('stats');
+    return;
+  }
+
+  if (action.type === 'open_screen') {
+    await toggleWorkspace(true);
+    await setWorkspacePanel('screen');
+  }
+}
+
+async function handleSuggestionDecision(id, decision, button) {
+  if (!id || !decision) return;
+  button.disabled = true;
+  try {
+    const response = await fetchWithAuth(
+      decision === 'approve'
+        ? `/api/suggestions/${encodeURIComponent(id)}/approve`
+        : `/api/suggestions/${encodeURIComponent(id)}/reject`,
+      {
+        method: 'POST',
+      }
+    );
+    const payload = await response.json();
+    if (!payload.success) {
+      throw new Error(payload.error || 'Suggestion update failed');
+    }
+
+    document.getElementById('suggestion-prompt-layer')?.remove();
+    showSlideInNotification(
+      decision === 'approve'
+        ? 'Suggestion approved and executed.'
+        : 'Suggestion rejected.',
+      decision === 'approve' ? 'success' : 'warning'
+    );
+    await loadSuggestions();
+  } catch (error) {
+    showSlideInNotification(error.message, 'error');
+    button.disabled = false;
+  }
+}
+
+async function showSuggestionsQueue() {
+  await loadSuggestions();
+  if (!state.suggestions.length) {
+    showSlideInNotification(
+      state.suggestMode ? 'No pending suggestions right now.' : 'Suggest Mode is off.',
+      'info'
+    );
+    return;
+  }
+
+  openModal(
+    'Pending Suggestions',
+    state.suggestions.map((suggestion) => ({
+      label: formatSuggestionLabel(suggestion),
+      value: suggestion.id,
+    })),
+    (id) => {
+      const suggestion = state.suggestions.find((entry) => entry.id === id);
+      if (suggestion) {
+        showSuggestionPrompt(suggestion);
+      }
+    }
+  );
 }
 
 function buildSnapshotStyles(cssText) {
@@ -713,6 +1137,31 @@ async function loadWorkspacePanel(panel) {
   } else if (panel === 'git') {
     await gitPanel.refresh();
   }
+  if (panel === 'assist' && !state.panelInitialized.assist) {
+    state.panelInitialized.assist = true;
+    await assistPanel.init();
+  } else if (panel === 'assist') {
+    assistPanel.renderContextSummary();
+    await assistPanel.refresh();
+  }
+  if (panel === 'stats' && !state.panelInitialized.stats) {
+    state.panelInitialized.stats = true;
+    await statsPanel.init();
+  } else if (panel === 'stats') {
+    if (state.sessionStats) {
+      statsPanel.handleState(state.sessionStats);
+    }
+    await statsPanel.refresh();
+  }
+  if (panel === 'timeline' && !state.panelInitialized.timeline) {
+    state.panelInitialized.timeline = true;
+    await timelinePanel.init();
+  } else if (panel === 'timeline') {
+    if (state.timeline) {
+      timelinePanel.handleState(state.timeline);
+    }
+    await timelinePanel.refresh();
+  }
   if (panel === 'screen') {
     await loadScreenStatus();
   }
@@ -825,6 +1274,10 @@ function connectWebSocket() {
     fetchAppState();
     loadQuickCommands();
     loadScreenStatus();
+    loadSuggestions();
+    loadSessionStats();
+    loadQuota();
+    loadTimeline();
   };
 
   state.ws.onmessage = (event) => {
@@ -872,6 +1325,35 @@ function connectWebSocket() {
       case 'quick_commands_updated':
         state.quickCommands = data.commands || state.quickCommands;
         renderQuickCommands();
+        break;
+      case 'suggestion_state':
+        setSuggestionState(data);
+        break;
+      case 'stats_state':
+        setStatsState(data.stats || data);
+        break;
+      case 'quota_state':
+        setQuotaState(data.quota || data);
+        break;
+      case 'timeline_state':
+        setTimelineState(data.timeline || data);
+        break;
+      case 'suggestion':
+        if (data.event === 'new_suggestion' && data.suggestion) {
+          showSuggestionPrompt(data.suggestion);
+          showSlideInNotification(
+            `Supervisor queued: ${formatSuggestionLabel(data.suggestion)}`,
+            data.suggestion.action === 'accept' ? 'success' : 'warning'
+          );
+        } else if (data.event === 'approved') {
+          showSlideInNotification('A suggestion was approved.', 'success');
+          document.getElementById('suggestion-prompt-layer')?.remove();
+        } else if (data.event === 'rejected') {
+          showSlideInNotification('A suggestion was rejected.', 'warning');
+          document.getElementById('suggestion-prompt-layer')?.remove();
+        } else if (data.event === 'expired') {
+          showSlideInNotification('A pending suggestion expired.', 'warning');
+        }
         break;
       default:
         break;
@@ -940,19 +1422,20 @@ targetBtn.addEventListener('click', showTargetSelector);
 themeBtn.addEventListener('click', () =>
   openModal(
     'Theme',
-    THEMES.map((value) => ({
-      label: value.charAt(0).toUpperCase() + value.slice(1),
-      value,
-    })),
+    THEMES,
     (value) => applyTheme(value)
   )
 );
 workspaceToggleBtn.addEventListener('click', () => toggleWorkspace());
 workspaceCloseBtn.addEventListener('click', () => toggleWorkspace(false));
-quotaBtn.addEventListener('click', () => {
-  messageInput.value = 'Check limits';
-  messageInput.dispatchEvent(new Event('input'));
-  messageInput.focus();
+sessionStatsBtn?.addEventListener('click', async () => {
+  await toggleWorkspace(true);
+  await setWorkspacePanel('stats');
+});
+suggestionsBtn?.addEventListener('click', showSuggestionsQueue);
+quotaBtn.addEventListener('click', async () => {
+  const quota = await loadQuota();
+  showQuotaPrompt(quota || state.quota);
 });
 modalCancelBtn.addEventListener('click', closeModal);
 modalOverlay.addEventListener('click', (event) => {
@@ -1034,11 +1517,18 @@ if (window.visualViewport) {
 }
 
 applyTheme(state.currentTheme, false);
+updateSuggestionLabel();
+updateSessionStatsLabel();
+updateQuotaLabel();
 registerServiceWorker();
 checkSslStatus();
 connectWebSocket();
 fetchAppState();
 loadQuickCommands();
+loadSuggestions();
+loadSessionStats();
+loadQuota();
+loadTimeline();
 checkChatStatus();
 setInterval(fetchAppState, 5000);
 setInterval(checkChatStatus, 10000);

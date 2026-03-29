@@ -4,6 +4,30 @@ All notable changes to **Antigravity Phone Connect** are documented here, in rev
 
 ---
 
+## v1.2.0 - Remote Ops Workspace & Timeline
+**Release Date:** March 29, 2026
+
+---
+
+### 🚀 New Features & Improvements
+- **Suggest Mode review queue**: Added a bounded supervisor suggestion queue with approval and rejection endpoints, WebSocket state, Telegram hooks, and a dedicated mobile pending-review flow.
+- **Session analytics**: Added `/api/stats`, a mobile Stats panel, richer in-memory metrics, and Telegram stats summaries for approvals, errors, quota warnings, uploads, and screen activity.
+- **Real quota visibility**: Added a local model quota service backed by Antigravity's language server, `/api/quota`, periodic refresh, mobile limits summaries, and Telegram `/quota`.
+- **Assist chat tab**: Added an Assist workspace tab with supervisor-backed responses, contextual action chips, markdown rendering, and in-memory conversation history.
+- **Screenshot timeline**: Added persistent screenshot storage in `data/screenshots/`, automatic change-aware capture scheduling, cleanup, `/api/timeline` routes, and a dedicated Timeline panel in the mobile workspace.
+- **UI system refresh**: Finished the CSS modularization, expanded themes to `dark`, `light`, `slate`, `pastel`, and `rainbow`, and split workspace/chat/assist styles for easier iteration.
+
+### 🧪 Validation & Developer Experience
+- Added Vitest with unit suites for config, network, hashing, session stats, supervisor logic, Telegram hooks, quota normalization, and screenshot timeline persistence.
+- Added `test:unit`, `test:unit:watch`, `test:coverage`, and `test:all` scripts.
+- Expanded the smoke suite to validate `/api/quota`, `/api/assist/*`, and `/api/timeline*`.
+
+### ⚠️ Operational Note
+- Release validation completed with automated tests on March 29, 2026.
+- A live CDP smoke was attempted locally the same day, but no Antigravity instance exposed ports `7800-7803` during verification.
+
+---
+
 ## v0.2.17 - UI Polish & Model Compatibility 🌟
 **Release Date:** February 20, 2026
 

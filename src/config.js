@@ -18,7 +18,9 @@ export const PROJECT_ROOT = join(__dirname, '..');
 // ─── CDP Ports ──────────────────────────────────────────────────────
 
 /** @type {number[]} CDP debug ports to scan */
-export const PORTS = [7800, 7801, 7802, 7803];
+export const PORTS = process.env.CDP_PORTS
+    ? process.env.CDP_PORTS.split(',').map(Number).filter(Boolean)
+    : [7800, 7801, 7802, 7803];
 
 /** @type {readonly string[]} Chat container IDs, in priority order */
 export const CONTAINER_IDS = ['cascade', 'conversation', 'chat'];
@@ -42,6 +44,61 @@ export const COOKIE_SECRET = process.env.COOKIE_SECRET || 'antigravity_secret_ke
 export const AUTH_SALT = process.env.AUTH_SALT || '';
 export const AUTH_COOKIE_NAME = 'omni_ag_auth';
 
+/**
+ * @param {string} name
+ * @param {boolean} [fallback=false]
+ * @returns {boolean}
+ */
+function readBooleanEnv(name, fallback = false) {
+    const value = String(process.env[name] ?? '').trim().toLowerCase();
+    if (!value) return fallback;
+    return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+/**
+ * @param {string} name
+ * @param {number} fallback
+ * @returns {number}
+ */
+function readPositiveIntEnv(name, fallback) {
+    const parsed = Number.parseInt(String(process.env[name] ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+// ─── Supervisor ────────────────────────────────────────────────────
+
+export function getSupervisorSuggestMode() {
+    return readBooleanEnv('SUPERVISOR_SUGGEST_MODE', false);
+}
+
+export function getSupervisorMaxQueue() {
+    return readPositiveIntEnv('SUPERVISOR_MAX_QUEUE', 10);
+}
+
+// ─── Quota Service ─────────────────────────────────────────────────
+
+export function getQuotaEnabled() {
+    return readBooleanEnv('QUOTA_ENABLED', false);
+}
+
+export function getQuotaPollInterval() {
+    return readPositiveIntEnv('QUOTA_POLL_INTERVAL', 300000);
+}
+
+// ─── Screenshot Timeline ───────────────────────────────────────────
+
+export function getScreenshotEnabled() {
+    return readBooleanEnv('SCREENSHOT_ENABLED', false);
+}
+
+export function getScreenshotInterval() {
+    return readPositiveIntEnv('SCREENSHOT_INTERVAL', 60000);
+}
+
+export function getScreenshotMax() {
+    return readPositiveIntEnv('SCREENSHOT_MAX', 100);
+}
+
 // ─── Version ────────────────────────────────────────────────────────
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
