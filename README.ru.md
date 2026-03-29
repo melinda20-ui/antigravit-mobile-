@@ -109,6 +109,8 @@ antigravity . --remote-debugging-port=7800
 | 🪟  | **Мульти-окна**                      | Переключайтесь между несколькими экземплярами Antigravity с одного телефона |
 | 🔄  | **Синхронизация в реальном времени** | < 100мс задержки через WebSocket — обновления мгновенные                    |
 | 🤖  | **Смена модели**                     | Переключайтесь между Gemini, Claude, GPT из мобильного выпадающего меню     |
+| 🤖  | **Remote Autonomy**        | Auto-detect and 1-tap accept/reject CLI instructions remotely            |
+| 📱  | **Telegram Alerts**        | Get push notifications for Blocks, Task completion and Pending actions   |
 | 📋  | **История чата**                     | Просматривайте и возобновляйте прошлые разговоры на мобильном               |
 | 🔒  | **Безопасность по умолчанию**        | HTTPS, аутентификация паролем, сессии на куки, авто-аутентификация LAN      |
 | 🌐  | **Удалённый доступ**                 | Поддержка ngrok с QR-кодом — доступ откуда угодно                           |

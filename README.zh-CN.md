@@ -109,6 +109,8 @@ antigravity . --remote-debugging-port=7800
 | 🪟  | **多窗口**      | 从一部手机在多个 Antigravity 实例之间切换                       |
 | 🔄  | **实时同步**    | 通过 WebSocket < 100ms 延迟——聊天更新即时出现                   |
 | 🤖  | **模型切换**    | 从移动端下拉菜单在 Gemini、Claude、GPT 之间切换                 |
+| 🤖  | **Remote Autonomy**        | Auto-detect and 1-tap accept/reject CLI instructions remotely            |
+| 📱  | **Telegram Alerts**        | Get push notifications for Blocks, Task completion and Pending actions   |
 | 📋  | **聊天历史**    | 在移动端浏览和恢复过去的对话                                    |
 | 🔒  | **默认安全**    | HTTPS、密码认证、Cookie 会话、LAN 自动认证                      |
 | 🌐  | **远程访问**    | 支持 ngrok 和二维码——从任何地方访问                             |
