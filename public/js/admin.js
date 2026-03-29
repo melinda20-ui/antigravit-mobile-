@@ -73,6 +73,12 @@ async function loadMetrics() {
   ]);
   const metrics = await metricsResponse.json();
   const logsPayload = await logsResponse.json();
+  const supervisorState = metrics.supervisor?.enabled ? 'Enabled' : 'Disabled';
+  const supervisorDetails = [
+    supervisorState,
+    metrics.supervisor?.provider,
+    metrics.supervisor?.model,
+  ].filter(Boolean).join(' · ');
 
   metaGrid.innerHTML = `
     <div class="meta-card"><strong>Version</strong><div>${escapeHtml(metrics.version)}</div></div>
@@ -80,7 +86,7 @@ async function loadMetrics() {
     <div class="meta-card"><strong>WebSocket Clients</strong><div>${metrics.wsClients}</div></div>
     <div class="meta-card"><strong>CDP</strong><div>${metrics.cdpConnected ? 'Connected' : 'Disconnected'}</div></div>
     <div class="meta-card"><strong>Workspace</strong><div>${escapeHtml(metrics.workspaceRoot)}</div></div>
-    <div class="meta-card"><strong>Supervisor</strong><div>${metrics.supervisor?.enabled ? 'Enabled' : 'Disabled'} · ${escapeHtml(metrics.supervisor?.model || '')}</div></div>
+    <div class="meta-card"><strong>Supervisor</strong><div>${escapeHtml(supervisorDetails)}</div></div>
   `;
 
   tunnelStatus.textContent = metrics.tunnel?.url
