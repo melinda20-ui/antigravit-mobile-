@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-03-29
+
+### Fixed
+- 🔒 **Security patching** — Merged upstream dependabot alert for `path-to-regexp` CVE-2026-4867.
+
 ## [1.2.0] - 2026-03-29
 
 ### Added
