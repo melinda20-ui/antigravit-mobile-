@@ -80,12 +80,29 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Publish to GitHub Packages (NPM)
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+          npm pkg set name="@diegosouzapw/omni-antigravity-remote-chat"
+          npm publish --registry=https://npm.pkg.github.com --access public || echo "⚠️ Version might already be published on GitHub."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Login to Docker Hub
         if: steps.version.outputs.changed == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        if: steps.version.outputs.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         if: steps.version.outputs.changed == 'true'
@@ -100,5 +117,7 @@ jobs:
           tags: |
             diegosouzapw/omni-antigravity-remote-chat:${{ steps.version.outputs.new }}
             diegosouzapw/omni-antigravity-remote-chat:latest
+            ghcr.io/diegosouzapw/omni-antigravity-remote-chat:${{ steps.version.outputs.new }}
+            ghcr.io/diegosouzapw/omni-antigravity-remote-chat:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
