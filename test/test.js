@@ -58,6 +58,27 @@ function httpGet(url, timeout = 3000) {
     });
 }
 
+function httpRequest(method, url, { headers = {}, body = null, timeout = 3000 } = {}) {
+    return new Promise((resolve, reject) => {
+        const target = new URL(url);
+        const client = target.protocol === 'https:' ? https : http;
+        const req = client.request(url, {
+            method,
+            timeout,
+            rejectUnauthorized: false,
+            headers
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
 function isPortAvailable(port) {
     return new Promise((resolve) => {
         const server = http.createServer();
@@ -130,6 +151,8 @@ async function main() {
     const filesToCheck = [
         'src/server.js',
         'src/supervisor.js',
+        'src/quota-service.js',
+        'src/screenshot-timeline.js',
         'src/utils/workspace.js',
         'scripts/cloudflare-tunnel.js',
         'launcher.js'
@@ -157,12 +180,18 @@ async function main() {
         'public/js/components/file-browser.js',
         'public/js/components/terminal-view.js',
         'public/js/components/git-panel.js',
+        'public/js/components/stats-panel.js',
+        'public/js/components/assist-panel.js',
+        'public/js/components/timeline-panel.js',
         'public/js/vendor/morphdom-lite.js',
         'public/css/style.css',
         'public/css/variables.css',
         'public/css/themes.css',
         'public/css/layout.css',
-        'public/css/components.css'
+        'public/css/components.css',
+        'public/css/chat.css',
+        'public/css/workspace.css',
+        'public/css/assist.css'
     ];
     for (const f of frontendFiles) {
         if (fs.existsSync(join(PROJECT_ROOT, f))) pass(`${f} exists`);
@@ -254,6 +283,58 @@ async function main() {
             const stateRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/app-state`);
             if (stateRes.status === 200) pass(`GET /app-state → 200`);
             else fail(`GET /app-state → ${stateRes.status}`);
+
+            // Test quota endpoint
+            const quotaRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/api/quota`);
+            if (quotaRes.status === 200) {
+                const data = JSON.parse(quotaRes.data);
+                pass(`GET /api/quota → 200 (${data.totalModels || 0} models)`);
+            } else {
+                fail(`GET /api/quota → ${quotaRes.status}`);
+            }
+
+            const timelineRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/api/timeline`);
+            if (timelineRes.status === 200) {
+                const data = JSON.parse(timelineRes.data);
+                pass(`GET /api/timeline → 200 (${data.totalEntries || 0} captures)`);
+
+                if (Array.isArray(data.entries) && data.entries.length > 0) {
+                    const imageRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}${data.entries[0].url}`);
+                    if (imageRes.status === 200) pass(`GET /api/timeline/:filename → 200`);
+                    else fail(`GET /api/timeline/:filename → ${imageRes.status}`);
+                }
+            } else {
+                fail(`GET /api/timeline → ${timelineRes.status}`);
+            }
+
+            const timelineCaptureRes = await httpRequest('POST', `${baseProtocol}://127.0.0.1:${SERVER_PORT}/api/timeline/capture`, {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'smoke-test' })
+            });
+            if (timelineCaptureRes.status === 200 || timelineCaptureRes.status === 503) {
+                pass(`POST /api/timeline/capture → ${timelineCaptureRes.status}`);
+            } else {
+                fail(`POST /api/timeline/capture → ${timelineCaptureRes.status}`);
+            }
+
+            const assistHistoryRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/api/assist/history`);
+            if (assistHistoryRes.status === 200) pass(`GET /api/assist/history → 200`);
+            else fail(`GET /api/assist/history → ${assistHistoryRes.status}`);
+
+            const assistChatRes = await httpRequest('POST', `${baseProtocol}://127.0.0.1:${SERVER_PORT}/api/assist/chat`, {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Give me a quick session summary.' })
+            });
+            if (assistChatRes.status === 200) {
+                const data = JSON.parse(assistChatRes.data);
+                if (typeof data.reply === 'string' && Array.isArray(data.history)) {
+                    pass(`POST /api/assist/chat → 200`);
+                } else {
+                    fail('POST /api/assist/chat → invalid response shape');
+                }
+            } else {
+                fail(`POST /api/assist/chat → ${assistChatRes.status}`);
+            }
 
             // Test login page
             const loginRes = await httpGet(`${baseProtocol}://127.0.0.1:${SERVER_PORT}/login.html`);

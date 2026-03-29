@@ -1,4 +1,4 @@
-const CACHE_NAME = 'omni-antigravity-shell-v1';
+const CACHE_NAME = 'omni-antigravity-shell-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -10,6 +10,9 @@ const APP_SHELL = [
   '/css/themes.css',
   '/css/layout.css',
   '/css/components.css',
+  '/css/chat.css',
+  '/css/workspace.css',
+  '/css/assist.css',
   '/js/app.js',
   '/js/admin.js',
   '/js/minimal.js',
@@ -17,6 +20,9 @@ const APP_SHELL = [
   '/js/components/file-browser.js',
   '/js/components/terminal-view.js',
   '/js/components/git-panel.js',
+  '/js/components/stats-panel.js',
+  '/js/components/assist-panel.js',
+  '/js/components/timeline-panel.js',
   '/icons/app-icon.svg',
   '/icons/app-icon-maskable.svg'
 ];

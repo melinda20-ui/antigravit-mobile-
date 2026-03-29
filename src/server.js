@@ -9,7 +9,15 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { sendTelegramNotification } from './utils/telegram.js';
+import {
+    sendTelegramNotification,
+    sendTypedNotification,
+    sendActionRequired,
+    sendSuggestionRequired,
+    initTelegramBot,
+    registerTelegramHooks,
+    stopBot as stopTelegramBot
+} from './utils/telegram.js';
 
 // Load .env from the package's own directory (not the cwd where npx runs)
 const _ownDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -41,6 +49,9 @@ import { killPortProcess, launchAntigravity } from './utils/process.js';
 import { hashString } from './utils/hash.js';
 import { discoverCDP, discoverAllCDP, connectCDP, initCDP } from './cdp/connection.js';
 import { inspectUI } from './ui_inspector.js';
+import { sessionStats } from './session-stats.js';
+import { quotaService } from './quota-service.js';
+import { screenshotTimeline } from './screenshot-timeline.js';
 import {
     ensureWorkspaceData,
     getGitSummary,
@@ -56,7 +67,7 @@ import {
     workspaceRoot,
     uploadsDir
 } from './utils/workspace.js';
-import { aiSupervisor } from './supervisor.js';
+import { aiSupervisor, suggestQueue, extractPendingCommand } from './supervisor.js';
 import { CloudflareTunnelManager } from '../scripts/cloudflare-tunnel.js';
 
 // ─── Mutable State ──────────────────────────────────────────────────
@@ -81,6 +92,10 @@ let AUTH_TOKEN = 'ag_default_token';
 
 /** @type {import('ws').WebSocketServer | null} */
 let websocketServer = null;
+let suggestionQueueUnsubscribe = null;
+let sessionStatsUnsubscribe = null;
+let quotaServiceUnsubscribe = null;
+let timelineUnsubscribe = null;
 
 const serverStartedAt = new Date().toISOString();
 const MAX_SERVER_LOGS = 250;
@@ -136,6 +151,157 @@ function getServerLogs(limit = 80) {
     return serverLogs.slice(-Math.max(1, limit));
 }
 
+function getSuggestionState() {
+    return {
+        suggestMode: aiSupervisor.isSuggestModeEnabled(),
+        pendingCount: suggestQueue.getPendingCount(),
+        suggestions: suggestQueue.getAll()
+    };
+}
+
+function broadcastSuggestionState() {
+    broadcast({
+        type: 'suggestion_state',
+        ...getSuggestionState(),
+        timestamp: new Date().toISOString()
+    });
+}
+
+function getStatsState() {
+    return {
+        ...sessionStats.getSummary(),
+        pendingSuggestions: suggestQueue.getPendingCount()
+    };
+}
+
+function broadcastStatsState() {
+    broadcast({
+        type: 'stats_state',
+        stats: getStatsState(),
+        timestamp: new Date().toISOString()
+    });
+}
+
+function getQuotaState() {
+    return quotaService.getSummary();
+}
+
+function broadcastQuotaState() {
+    broadcast({
+        type: 'quota_state',
+        quota: getQuotaState(),
+        timestamp: new Date().toISOString()
+    });
+}
+
+function getTimelineState() {
+    return screenshotTimeline.getSummary();
+}
+
+function broadcastTimelineState() {
+    broadcast({
+        type: 'timeline_state',
+        timeline: getTimelineState(),
+        timestamp: new Date().toISOString()
+    });
+}
+
+function getAssistContext() {
+    return {
+        stats: getStatsState(),
+        quota: getQuotaState(),
+        pendingSuggestions: suggestQueue.getPendingCount(),
+        suggestions: suggestQueue.getPending().slice(0, 3)
+    };
+}
+
+function getLatestPendingSuggestion() {
+    return suggestQueue.getPending()[0] || null;
+}
+
+async function captureCurrentScreenshot({ format = 'jpeg', quality = 70 } = {}) {
+    if (!cdpConnection) {
+        return { success: false, error: 'CDP disconnected' };
+    }
+
+    try {
+        const params = { format };
+        if (format !== 'png') {
+            params.quality = quality;
+        }
+
+        const result = await cdpConnection.call('Page.captureScreenshot', params);
+        return {
+            success: true,
+            data: result.data,
+            mimeType: format === 'png' ? 'image/png' : 'image/jpeg'
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+async function approveQueuedSuggestion(id) {
+    const suggestion = suggestQueue.find(id);
+    if (!suggestion) {
+        return { success: false, error: 'Suggestion not found' };
+    }
+
+    if (suggestion.status !== 'pending') {
+        return { success: false, error: `Suggestion already ${suggestion.status}` };
+    }
+
+    if (!cdpConnection) {
+        return { success: false, error: 'CDP disconnected' };
+    }
+
+    const executed = await completePendingAction(cdpConnection, suggestion.action);
+    if (!executed.success) {
+        return {
+            success: false,
+            error: executed.error || 'Failed to execute suggested action',
+            executed
+        };
+    }
+
+    const approved = suggestQueue.approve(id);
+    if (suggestion.action === 'accept') {
+        sessionStats.increment('actionsApproved');
+    } else {
+        sessionStats.increment('actionsRejected');
+    }
+    sessionStats.logAction('suggestion_executed', {
+        id,
+        action: suggestion.action
+    });
+    return {
+        success: true,
+        suggestion: approved,
+        executed
+    };
+}
+
+function rejectQueuedSuggestion(id) {
+    const suggestion = suggestQueue.find(id);
+    if (!suggestion) {
+        return { success: false, error: 'Suggestion not found' };
+    }
+
+    if (suggestion.status !== 'pending') {
+        return { success: false, error: `Suggestion already ${suggestion.status}` };
+    }
+
+    const rejected = suggestQueue.reject(id);
+    sessionStats.logAction('suggestion_rejected_by_user', { id });
+    return {
+        success: true,
+        suggestion: rejected
+    };
+}
+
 /**
  * Broadcast a JSON payload to connected mobile clients.
  *
@@ -179,6 +345,7 @@ function getScreencastStatus() {
  * @returns {Promise<void>}
  */
 async function stopScreencast() {
+    const wasActive = screenStreamState.active;
     if (cdpConnection && screenStreamState.active) {
         try {
             if (screenStreamState.listener) {
@@ -194,6 +361,10 @@ async function stopScreencast() {
     screenStreamState.startedAt = '';
     screenStreamState.lastFrameAt = '';
     screenStreamState.listener = null;
+    if (wasActive) {
+        sessionStats.increment('screenStreamsStopped');
+        sessionStats.logAction('screencast_stopped');
+    }
     broadcast({ type: 'screen_status', status: getScreencastStatus() });
 }
 
@@ -238,6 +409,8 @@ async function startScreencast() {
     screenStreamState.active = true;
     screenStreamState.startedAt = new Date().toISOString();
     screenStreamState.lastFrameAt = '';
+    sessionStats.increment('screenStreamsStarted');
+    sessionStats.logAction('screencast_started');
     broadcast({ type: 'screen_status', status: getScreencastStatus() });
     return getScreencastStatus();
 }
@@ -271,6 +444,64 @@ async function maybeStartAutoTunnel() {
  * @param {import('./state.js').CDPConnection} cdp
  * @returns {Promise<import('./state.js').Snapshot | null>}
  */
+/**
+ * Scan all CDP contexts for full-page error/modal dialogs that exist OUTSIDE
+ * the main chat container (e.g. quota reached, agent terminated, rate limit).
+ * Inspired by tody-agent/AntigravityMobile chat-stream.mjs:checkErrorDialogs.
+ *
+ * @param {import('./state.js').CDPConnection} cdp
+ * @returns {Promise<{error: string, type: string} | null>}
+ */
+async function checkErrorDialogs(cdp) {
+    const DIALOG_SCRIPT = `(function() {
+        try {
+            const dialogs = document.querySelectorAll(
+                '[role="dialog"], .dialog-shadow, .monaco-dialog-box, ' +
+                '[class*="dialog"], [class*="notification-toast"], ' +
+                '[class*="error-widget"], .notifications-toasts'
+            );
+            for (const d of dialogs) {
+                if (d.offsetParent === null && !d.closest('[class*="toast"]')) continue;
+                const text = (d.innerText || '').toLowerCase();
+                const len = text.length;
+                if (len < 5 || len > 2000) continue;
+
+                if (text.includes('terminated due to error') || text.includes('agent terminated')) {
+                    return { error: 'Agent terminated due to error', type: 'terminated' };
+                }
+                if (text.includes('model quota reached') || text.includes('quota exhausted') || text.includes('usage limit')) {
+                    return { error: 'Model quota reached', type: 'quota' };
+                }
+                if (text.includes('rate limit') || text.includes('too many requests') || text.includes('rate_limit_error')) {
+                    return { error: 'Rate limit exceeded', type: 'rate_limit' };
+                }
+                if (text.includes('high traffic') || text.includes('overloaded')) {
+                    return { error: 'High traffic / server overloaded', type: 'high_traffic' };
+                }
+                if (text.includes('internal server error') || text.includes('something went wrong')) {
+                    return { error: 'Internal server error', type: 'server_error' };
+                }
+                if (text.includes('network error') || text.includes('connection lost')) {
+                    return { error: 'Network error / connection lost', type: 'network_error' };
+                }
+            }
+            return null;
+        } catch(e) { return null; }
+    })()`;
+
+    for (const ctx of cdp.contexts) {
+        try {
+            const res = await cdp.call("Runtime.evaluate", {
+                expression: DIALOG_SCRIPT,
+                returnByValue: true,
+                contextId: ctx.id
+            });
+            if (res.result?.value) return res.result.value;
+        } catch (e) { /* context may be gone */ }
+    }
+    return null;
+}
+
 async function captureSnapshot(cdp) {
     const CAPTURE_SCRIPT = `(() => {
         // Smart container detection: try multiple IDs with fallback chain
@@ -1447,21 +1678,42 @@ async function completePendingAction(cdp, action) {
     const EXP = `(async () => {
         try {
             const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
-            const acceptTexts = ['run command', 'allow', 'accept', 'run', 'yes', 'confirm'];
+            const acceptTexts = ['run command', 'allow', 'accept', 'run', 'yes', 'confirm',
+                                 'allow once', 'allow this conversation', 'continue', 'proceed'];
             const rejectTexts = ['reject', 'deny', 'cancel', 'no', 'abort'];
+
+            // SAFETY: Never click permanent permission buttons
+            // These grant persistent permissions that bypass future prompts
+            const dangerousTexts = ['always run', 'always allow', 'ask every time',
+                                    'trust workspace', 'trust this workspace'];
             
             const targetTexts = ${isAccept} ? acceptTexts : rejectTexts;
             
-            const targetBtn = allBtns.find(btn => {
+            // Filter all visible buttons
+            const visibleBtns = allBtns.filter(btn => btn.offsetParent !== null);
+            
+            // Find target buttons (may be multiple accept buttons for simultaneous actions)
+            const targetBtns = visibleBtns.filter(btn => {
                 const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                return targetTexts.some(t => text === t) && btn.offsetParent !== null;
+                // Block dangerous permanent permissions
+                if (dangerousTexts.some(d => text.includes(d))) return false;
+                return targetTexts.some(t => text === t || text.startsWith(t));
             });
             
-            if (targetBtn) {
-                targetBtn.click();
-                return { success: true };
+            if (targetBtns.length === 0) {
+                return { error: 'Action button not found' };
             }
-            return { error: 'Action button not found' };
+            
+            // Click with incremental delays to avoid race conditions
+            // when multiple accept buttons appear simultaneously
+            let clicked = 0;
+            for (let i = 0; i < targetBtns.length; i++) {
+                const delay = i * 800; // 800ms between clicks
+                if (delay > 0) await new Promise(r => setTimeout(r, delay));
+                targetBtns[i].click();
+                clicked++;
+            }
+            return { success: true, buttonsClicked: clicked };
         } catch (e) {
             return { error: e.toString() };
         }
@@ -1500,6 +1752,7 @@ async function startPolling(wss) {
     let lastNotificationTime = 0;
     let lastActionNotificationTime = 0;
     let lastAutoApprovalTime = 0;
+    let lastDialogErrorTime = 0;
 
     // WebSocket ping/pong heartbeat (every 30s)
     heartbeatInterval = setInterval(() => {
@@ -1542,6 +1795,8 @@ async function startPolling(wss) {
                     isConnecting = false;
                     reconnectDelay = 2000; // Reset backoff
                     reconnectAttempts = 0;
+                    sessionStats.increment('reconnections');
+                    sessionStats.logAction('cdp_reconnected');
                     broadcastCDPStatus('connected');
                 }
             } catch (err) {
@@ -1556,51 +1811,114 @@ async function startPolling(wss) {
         }
 
         try {
+            // ─── Dialog Error Scanner (outside chat container) ────────
+            // Scans for full-page modal errors in ALL CDP contexts
+            // Pattern from tody-agent/AntigravityMobile:checkErrorDialogs
+            const nowTime = Date.now();
+            if (nowTime - lastDialogErrorTime > 30000) { // 30s cooldown
+                try {
+                    const dialogError = await checkErrorDialogs(cdpConnection);
+                    if (dialogError) {
+                        lastDialogErrorTime = nowTime;
+                        sessionStats.increment('dialogErrorsDetected');
+                        sessionStats.logError(dialogError.type, dialogError.error);
+                        const typeEmoji = {
+                            terminated: '💀', quota: '📊', rate_limit: '⏱️',
+                            high_traffic: '🔥', server_error: '💥', network_error: '🌐'
+                        };
+                        const emoji = typeEmoji[dialogError.type] || '🚨';
+                        console.log(`${emoji} Dialog error detected: [${dialogError.type}] ${dialogError.error}`);
+                        broadcast({
+                            type: 'notification',
+                            event: 'dialog_error',
+                            errorType: dialogError.type,
+                            message: `${emoji} ${dialogError.error}`,
+                            timestamp: new Date().toISOString()
+                        });
+                        sendTelegramNotification(`${emoji} <b>Antigravity Alert:</b> ${dialogError.error}`).then((sent) => {
+                            if (sent) sessionStats.increment('telegramNotificationsSent');
+                        }).catch(() => {});
+                    }
+                } catch (dialogErr) {
+                    // non-critical — don't break polling
+                }
+            }
+
             const snapshot = await captureSnapshot(cdpConnection);
             if (snapshot && !snapshot.error) {
+                sessionStats.increment('snapshotsProcessed');
                 const hash = hashString(snapshot.html);
 
-                // --- NEW: Intercept Text indicating Agent Terminated or Quota ---
+                // --- Intercept Text indicating Agent Terminated or Quota ---
                 const htmlLower = snapshot.html.toLowerCase();
-                const nowTime = Date.now();
                 
                 // 1. Check for Pending Actions (e.g., Run command) with specific cooldown
                 let hasPendingAction = false;
                 if (htmlLower.includes('run command') && (htmlLower.includes('reject') || htmlLower.includes('deny'))) {
                     hasPendingAction = true;
-                    if (nowTime - lastAutoApprovalTime > 15000) {
-                        try {
-                            const decision = await aiSupervisor.shouldApprove({ html: snapshot.html });
-                            if (decision.approved) {
-                                const approval = await completePendingAction(cdpConnection, 'accept');
-                                if (approval.success) {
+                    if (aiSupervisor.isSuggestModeEnabled()) {
+                        const commandText = extractPendingCommand(snapshot.html);
+                        if (!suggestQueue.hasPendingCommand(commandText)) {
+                            try {
+                                const review = await aiSupervisor.reviewPendingAction({ html: snapshot.html });
+                                const result = suggestQueue.add({
+                                    action: review.suggestedAction,
+                                    command: review.commandText,
+                                    reason: review.reason,
+                                    source: review.source,
+                                    summary: review.summary
+                                });
+                                if (result.created) {
+                                    console.log(`📝 Supervisor queued suggestion (${review.suggestedAction}) for pending action`);
+                                }
+                            } catch (error) {
+                                console.warn(`Supervisor suggest-mode review failed: ${error.message}`);
+                            }
+                        }
+                    } else {
+                        if (nowTime - lastAutoApprovalTime > 15000) {
+                            try {
+                                const decision = await aiSupervisor.shouldApprove({ html: snapshot.html });
+                                if (decision.approved) {
+                                    const approval = await completePendingAction(cdpConnection, 'accept');
+                                    if (approval.success) {
                                     lastAutoApprovalTime = nowTime;
                                     lastActionNotificationTime = nowTime;
+                                    sessionStats.increment('actionsApproved');
+                                    sessionStats.increment('actionsAutoApproved');
+                                    sessionStats.logAction('action_auto_approved', {
+                                        reason: decision.reason
+                                    });
                                     broadcast({
                                         type: 'notification',
                                         event: 'action_auto_approved',
                                         message: `Supervisor local aprovou a acao pendente (${decision.reason}).`,
                                         timestamp: new Date().toISOString()
                                     });
-                                    sendTelegramNotification('✅ <b>Antigravity Supervisor:</b> uma aprovacao segura foi liberada automaticamente.');
+                                    sendTelegramNotification('✅ <b>Antigravity Supervisor:</b> uma aprovacao segura foi liberada automaticamente.').then((sent) => {
+                                        if (sent) sessionStats.increment('telegramNotificationsSent');
+                                    }).catch(() => {});
                                 }
                             }
-                        } catch (error) {
-                            console.warn(`Supervisor check failed: ${error.message}`);
+                            } catch (error) {
+                                console.warn(`Supervisor check failed: ${error.message}`);
+                            }
                         }
-                    }
 
-                    if (nowTime - lastActionNotificationTime > 15000 && nowTime - lastAutoApprovalTime > 5000) { // 15 sec cooldown
-                        lastActionNotificationTime = nowTime;
-                        const msg = 'Agent requires approval format (Run Command).';
-                        broadcast({
-                            type: 'notification',
-                            event: 'action_required',
-                            message: msg,
-                            timestamp: new Date().toISOString()
-                        });
-                        console.log(`⚠️ Alert triggered: Action Pending`);
-                        sendTelegramNotification('⚠️ <b>Antigravity Action Required!</b>\\nO Agente parou a execução e aguarda aprovação manual.');
+                        if (nowTime - lastActionNotificationTime > 15000 && nowTime - lastAutoApprovalTime > 5000) {
+                            lastActionNotificationTime = nowTime;
+                            const msg = 'Agent requires approval format (Run Command).';
+                            broadcast({
+                                type: 'notification',
+                                event: 'action_required',
+                                message: msg,
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log(`⚠️ Alert triggered: Action Pending`);
+                            sendTelegramNotification('⚠️ <b>Antigravity Action Required!</b>\\nO Agente parou a execução e aguarda aprovação manual.').then((sent) => {
+                                if (sent) sessionStats.increment('telegramNotificationsSent');
+                            }).catch(() => {});
+                        }
                     }
                 }
 
@@ -1608,15 +1926,24 @@ async function startPolling(wss) {
                 if (nowTime - lastNotificationTime > 60000) { // 1 min cooldown
                     let notifyType = null;
                     let notifyMessage = '';
-                    if (htmlLower.includes('model quota reached') || htmlLower.includes('usage limit')) {
+                    if (htmlLower.includes('model quota reached') || htmlLower.includes('usage limit') || htmlLower.includes('quota exhausted')) {
                         notifyType = 'quota_error';
                         notifyMessage = 'Model Quota Exceeded!';
-                    } else if (htmlLower.includes('agent terminated') || htmlLower.includes('agent stopped')) {
+                        sessionStats.increment('quotaWarnings');
+                        sessionStats.logError('quota', notifyMessage);
+                    } else if (htmlLower.includes('agent terminated') || htmlLower.includes('agent stopped') || htmlLower.includes('terminated due to error')) {
                         notifyType = 'agent_error';
                         notifyMessage = 'Agent Terminated or Blocked!';
+                        sessionStats.logError('agent_error', notifyMessage);
+                    } else if (htmlLower.includes('rate limit') || htmlLower.includes('too many requests')) {
+                        notifyType = 'rate_limit';
+                        notifyMessage = 'Rate Limit Hit!';
+                        sessionStats.increment('rateLimitHits');
+                        sessionStats.logError('rate_limit', notifyMessage);
                     } else if (htmlLower.includes('task completed') && htmlLower.includes('i have completed the task')) {
                         notifyType = 'task_completed';
                         notifyMessage = 'Task Completed Successfully!';
+                        sessionStats.logAction('task_completed');
                     }
                     
                     if (notifyType) {
@@ -1630,7 +1957,9 @@ async function startPolling(wss) {
                         console.log(`⚠️ Alert triggered: ${notifyMessage}`);
                         
                         const emoji = notifyType === 'task_completed' ? '✅' : '🚨';
-                        sendTelegramNotification(`${emoji} <b>Antigravity Notification:</b> ${notifyMessage}`);
+                        sendTelegramNotification(`${emoji} <b>Antigravity Notification:</b> ${notifyMessage}`).then((sent) => {
+                            if (sent) sessionStats.increment('telegramNotificationsSent');
+                        }).catch(() => {});
                     }
                 }
                 // ---------------------------------------------------------------
@@ -1638,6 +1967,7 @@ async function startPolling(wss) {
                 if (hash !== lastSnapshotHash) {
                     lastSnapshot = snapshot;
                     lastSnapshotHash = hash;
+                    sessionStats.increment('snapshotUpdatesBroadcast');
                     broadcast({
                         type: 'snapshot_update',
                         timestamp: new Date().toISOString()
@@ -1649,6 +1979,7 @@ async function startPolling(wss) {
                 const now = Date.now();
                 if (!lastErrorLog || now - lastErrorLog > 10000) {
                     const errorMsg = snapshot?.error || 'No valid snapshot captured (check contexts)';
+                    sessionStats.logError('snapshot_capture', errorMsg);
                     console.warn(`⚠️  Snapshot capture issue: ${errorMsg} `);
                     if (errorMsg.includes('container not found')) {
                         console.log('   (Tip: Ensure an active chat is open in Antigravity)');
@@ -1695,6 +2026,110 @@ async function createServer() {
 
     const wss = new WebSocketServer({ server });
     websocketServer = wss;
+    await screenshotTimeline.init();
+    if (!suggestionQueueUnsubscribe) {
+        suggestionQueueUnsubscribe = suggestQueue.subscribe((event, payload) => {
+            if (event === 'added') {
+                sessionStats.increment('suggestionsCreated');
+                sessionStats.logAction('suggestion_created', {
+                    action: payload.action,
+                    reason: payload.reason
+                });
+            } else if (event === 'approved') {
+                sessionStats.increment('suggestionsApproved');
+                sessionStats.logAction('suggestion_approved', {
+                    action: payload.action
+                });
+            } else if (event === 'rejected') {
+                sessionStats.increment('suggestionsRejected');
+                sessionStats.logAction('suggestion_rejected', {
+                    action: payload.action
+                });
+            } else if (event === 'expired' && payload?.command) {
+                sessionStats.logAction('suggestion_expired', {
+                    command: payload.command
+                });
+            }
+
+            if (event === 'added') {
+                broadcast({
+                    type: 'suggestion',
+                    event: 'new_suggestion',
+                    suggestion: payload,
+                    pendingCount: suggestQueue.getPendingCount(),
+                    timestamp: new Date().toISOString()
+                });
+                sendSuggestionRequired(payload).then((sent) => {
+                    if (sent) sessionStats.increment('telegramNotificationsSent');
+                }).catch(() => {});
+            } else {
+                broadcast({
+                    type: 'suggestion',
+                    event,
+                    suggestion: payload?.id ? payload : null,
+                    pendingCount: suggestQueue.getPendingCount(),
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            broadcastSuggestionState();
+        });
+    }
+    if (!sessionStatsUnsubscribe) {
+        sessionStatsUnsubscribe = sessionStats.subscribe(() => {
+            broadcastStatsState();
+        });
+    }
+    if (!quotaServiceUnsubscribe) {
+        quotaServiceUnsubscribe = quotaService.subscribe((event, summary) => {
+            broadcastQuotaState();
+            if (event !== 'updated' || !Array.isArray(summary?.alerts) || !summary.alerts.length) {
+                return;
+            }
+
+            const lines = summary.alerts.slice(0, 4).map((model) =>
+                `• <b>${model.name}</b>: ${model.usagePercent}% used`
+            );
+            sendTypedNotification(
+                'warning',
+                [
+                    '⚠️ <b>Model quota alert</b>',
+                    ...lines,
+                    summary.lastUpdated
+                        ? `Updated: ${new Date(summary.lastUpdated).toLocaleTimeString()}`
+                        : ''
+                ].filter(Boolean).join('\n')
+            ).then((sent) => {
+                if (sent) sessionStats.increment('telegramNotificationsSent');
+            }).catch(() => {});
+        });
+    }
+    if (!timelineUnsubscribe) {
+        timelineUnsubscribe = screenshotTimeline.subscribe((event, summary, payload) => {
+            if (event === 'captured' && payload?.entry) {
+                sessionStats.increment('timelineCaptures');
+                sessionStats.logAction('timeline_capture_saved', {
+                    reason: payload.entry.reason,
+                    filename: payload.entry.filename
+                });
+            } else if (event === 'cleared') {
+                sessionStats.logAction('timeline_cleared', {
+                    cleared: payload?.cleared || 0
+                });
+            }
+
+            broadcastTimelineState();
+        });
+    }
+    quotaService.start();
+    quotaService.refresh().catch(() => {});
+    screenshotTimeline.start({
+        getSnapshotHash: () => lastSnapshotHash || '',
+        captureScreenshot: () => captureCurrentScreenshot({
+            format: 'jpeg',
+            quality: 70
+        })
+    });
     terminalManager.on('output', (entry) => {
         broadcast({ type: 'terminal_output', entry });
     });
@@ -1896,7 +2331,123 @@ async function createServer() {
         const { action } = req.body;
         if (!cdpConnection) return res.status(503).json({ error: 'CDP disconnected' });
         const result = await completePendingAction(cdpConnection, action);
+        if (result.success) {
+            if (action === 'accept') {
+                sessionStats.increment('actionsApproved');
+            } else if (action === 'reject') {
+                sessionStats.increment('actionsRejected');
+            }
+            sessionStats.logAction('manual_pending_action', { action });
+        }
         res.json(result);
+    });
+
+    app.get('/api/suggestions', (req, res) => {
+        res.json(getSuggestionState());
+    });
+
+    app.get('/api/suggestions/pending', (req, res) => {
+        res.json({
+            suggestMode: aiSupervisor.isSuggestModeEnabled(),
+            pendingCount: suggestQueue.getPendingCount(),
+            suggestions: suggestQueue.getPending()
+        });
+    });
+
+    app.post('/api/suggestions/:id/approve', async (req, res) => {
+        const result = await approveQueuedSuggestion(String(req.params.id || ''));
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        res.json(result);
+    });
+
+    app.post('/api/suggestions/:id/reject', (req, res) => {
+        const result = rejectQueuedSuggestion(String(req.params.id || ''));
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+        res.json(result);
+    });
+
+    app.delete('/api/suggestions', (req, res) => {
+        const cleared = suggestQueue.clear();
+        res.json({ success: true, cleared });
+    });
+
+    app.get('/api/stats', (req, res) => {
+        res.json(getStatsState());
+    });
+
+    app.get('/api/quota', async (req, res) => {
+        const summary = await quotaService.refresh();
+        res.json(summary);
+    });
+
+    app.get('/api/timeline', async (req, res) => {
+        await screenshotTimeline.init();
+        res.json(getTimelineState());
+    });
+
+    app.get('/api/timeline/:filename', async (req, res) => {
+        const file = await screenshotTimeline.resolveFile(String(req.params.filename || ''));
+        if (!file) {
+            return res.status(404).json({ error: 'Screenshot not found' });
+        }
+
+        res.type(file.entry.mimeType || 'image/jpeg');
+        res.sendFile(file.path);
+    });
+
+    app.post('/api/timeline/capture', async (req, res) => {
+        try {
+            const result = await screenshotTimeline.captureNow({
+                reason: String(req.body?.reason || 'manual'),
+                snapshotHash: lastSnapshotHash || '',
+                force: true
+            });
+            res.json(result);
+        } catch (error) {
+            sessionStats.logError('timeline_capture', error.message);
+            res.status(error.message.includes('CDP disconnected') ? 503 : 500).json({
+                error: error.message,
+                ...getTimelineState()
+            });
+        }
+    });
+
+    app.delete('/api/timeline', async (req, res) => {
+        const result = await screenshotTimeline.clear();
+        res.json(result);
+    });
+
+    app.get('/api/assist/history', (req, res) => {
+        res.json({ messages: aiSupervisor.getAssistHistory() });
+    });
+
+    app.delete('/api/assist/history', (req, res) => {
+        aiSupervisor.clearAssistHistory();
+        sessionStats.logAction('assist_history_cleared');
+        res.json({ success: true, messages: [] });
+    });
+
+    app.post('/api/assist/chat', async (req, res) => {
+        const message = String(req.body?.message || '').trim();
+        if (!message) {
+            return res.status(400).json({ error: 'Message required' });
+        }
+
+        try {
+            const result = await aiSupervisor.chatWithUser(message, getAssistContext());
+            sessionStats.logAction('assist_chat_message', {
+                source: result.source,
+                length: message.length
+            });
+            res.json(result);
+        } catch (error) {
+            sessionStats.logError('assist_chat', error.message);
+            res.status(500).json({ error: error.message });
+        }
     });
 
     // Send message
@@ -1912,6 +2463,12 @@ async function createServer() {
         }
 
         const result = await injectMessage(cdpConnection, message);
+        if (result.ok !== false) {
+            sessionStats.increment('messagesSent');
+            sessionStats.logAction('message_sent', {
+                length: message.length
+            });
+        }
 
         // Always return 200 - the message usually goes through even if CDP reports issues
         // The client will refresh and see if the message appeared
@@ -2061,6 +2618,12 @@ async function createServer() {
                 upload: saved,
                 injection
             });
+            if (injection?.ok !== false) {
+                sessionStats.increment('uploadsInjected');
+                sessionStats.logAction('image_uploaded', {
+                    name: saved.name
+                });
+            }
         } catch (error) {
             res.status(400).json({ error: error.message });
         }
@@ -2093,6 +2656,9 @@ async function createServer() {
                     ...tunnelManager.getStatus()
                 },
                 supervisor: aiSupervisor.getStatus(),
+                suggestions: getSuggestionState(),
+                quota: getQuotaState(),
+                timeline: getTimelineState(),
                 screencast: getScreencastStatus(),
                 quickCommandsCount: commands.length,
                 recentLogs: getServerLogs(40)
@@ -2384,6 +2950,22 @@ async function createServer() {
             type: 'tunnel_status',
             status: tunnelManager.getStatus()
         }));
+        ws.send(JSON.stringify({
+            type: 'suggestion_state',
+            ...getSuggestionState()
+        }));
+        ws.send(JSON.stringify({
+            type: 'stats_state',
+            stats: getStatsState()
+        }));
+        ws.send(JSON.stringify({
+            type: 'quota_state',
+            quota: getQuotaState()
+        }));
+        ws.send(JSON.stringify({
+            type: 'timeline_state',
+            timeline: getTimelineState()
+        }));
 
         ws.on('close', () => {
             console.log('📱 Client disconnected');
@@ -2472,6 +3054,11 @@ async function main() {
         app.post('/new-chat', async (req, res) => {
             if (!cdpConnection) return res.status(503).json({ error: 'CDP disconnected' });
             const result = await startNewChat(cdpConnection);
+            if (result.success) {
+                sessionStats.reset('new-chat');
+                sessionStats.logAction('new_chat_started');
+                aiSupervisor.clearAssistHistory();
+            }
             res.json(result);
         });
 
@@ -2561,13 +3148,66 @@ async function main() {
             console.log('');
 
             maybeStartAutoTunnel();
+
+            // Initialize Telegram bot with interactive commands
+            initTelegramBot().then(active => {
+                if (active) {
+                    console.log(`  ${GR}${B}▸${R} ${WH}${B}Telegram${R}   ${GR}Bot active ✅${R}`);
+                    registerTelegramHooks({
+                        onApprove: async () => {
+                            const pendingSuggestion = getLatestPendingSuggestion();
+                            if (pendingSuggestion) {
+                                return approveQueuedSuggestion(pendingSuggestion.id);
+                            }
+                            return cdpConnection ? completePendingAction(cdpConnection, 'accept') : { error: 'No CDP' };
+                        },
+                        onReject: async () => {
+                            const pendingSuggestion = getLatestPendingSuggestion();
+                            if (pendingSuggestion) {
+                                return rejectQueuedSuggestion(pendingSuggestion.id);
+                            }
+                            return cdpConnection ? completePendingAction(cdpConnection, 'reject') : { error: 'No CDP' };
+                        },
+                        onStatus: () => ({
+                            cdpConnected: !!(cdpConnection?.ws?.readyState === WebSocket.OPEN),
+                            supervisorEnabled: aiSupervisor.enabled,
+                            suggestMode: aiSupervisor.isSuggestModeEnabled(),
+                            pendingSuggestions: suggestQueue.getPendingCount(),
+                            model: 'via /app-state',
+                            mode: 'via /app-state',
+                            targetsCount: availableTargets.length,
+                            uptime: process.uptime() > 3600
+                                ? `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`
+                                : `${Math.floor(process.uptime()/60)}m`
+                        }),
+                        onStats: () => getStatsState(),
+                        onQuota: () => quotaService.refresh(),
+                        onScreenshot: async () => {
+                            const result = await captureCurrentScreenshot({
+                                format: 'jpeg',
+                                quality: 70
+                            });
+                            if (!result.success) {
+                                return { data: null };
+                            }
+                            sessionStats.increment('screenCaptures');
+                            sessionStats.logAction('screenshot_captured');
+                            return { data: result.data };
+                        },
+                        onSuggestionApprove: (id) => approveQueuedSuggestion(id),
+                        onSuggestionReject: (id) => rejectQueuedSuggestion(id)
+                    });
+                }
+            }).catch(() => {});
         });
 
         // Graceful shutdown handlers
         const gracefulShutdown = async (signal) => {
             console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
             await stopScreencast();
+            screenshotTimeline.stop();
             await tunnelManager.stop();
+            await stopTelegramBot();
             wss.close(() => {
                 console.log('   WebSocket server closed');
             });

@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-29
+
+### Added
+
+- 🎨 **Workspace refresh** — Completed the modular CSS split, expanded the theme system to five themes, and separated chat/workspace/assist styling for cleaner UI evolution.
+- 🧠 **Supervisor Suggest Mode** — Added a bounded suggestion queue with REST endpoints, WebSocket state, Telegram approval/rejection support, and pending review counts in the mobile UI.
+- 📊 **Session analytics** — Added in-memory session stats, `/api/stats`, a mobile Stats panel, and Telegram stats summaries for messages, approvals, errors, quota warnings, and screen activity.
+- 📈 **Model quota service** — Added real local language-server quota discovery, `/api/quota`, automatic alerting, Telegram `/quota`, and a mobile limits summary.
+- 💬 **Assist workspace tab** — Added supervisor-backed assist chat history, `/api/assist/*` endpoints, contextual action buttons, and markdown rendering in the mobile workspace.
+- 🖼️ **Screenshot timeline** — Added persistent captures in `data/screenshots/`, `/api/timeline*` routes, background change-aware capture scheduling, cleanup, and a dedicated mobile Timeline panel.
+- 🧪 **Vitest suite** — Added unit tests for config, hash, network, supervisor, Telegram, session stats, quota, and screenshot timeline, with coverage tooling and `test:unit` scripts.
+
 ### Changed
 
-- 🤖 **AI Supervisor** — Replaced the Ollama-specific supervisor transport with an OmniRoute OpenAI-compatible integration (`/v1/chat/completions`) plus `OMNIROUTE_SUPERVISOR_*` environment variables.
+- 🤖 **AI Supervisor transport** — Replaced the Ollama-specific supervisor transport with an OmniRoute OpenAI-compatible integration (`/v1/chat/completions`) plus `OMNIROUTE_SUPERVISOR_*` environment variables.
+- 📦 **Release versioning** — Synchronized package/runtime metadata to `1.2.0` and refreshed release documentation for the current feature set.
 
 ## [1.1.0] - 2026-03-29
 

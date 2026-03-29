@@ -11,7 +11,7 @@
 <br/>
 <br/>
 
-![Version](https://img.shields.io/badge/version-0.5.3-6366f1) ![Node](https://img.shields.io/badge/node-22%2B-10b981) ![CI](https://github.com/diegosouzapw/OmniAntigravityRemoteChat/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-6366f1) ![Node](https://img.shields.io/badge/node-22%2B-10b981) ![CI](https://github.com/diegosouzapw/OmniAntigravityRemoteChat/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 [![npm](https://img.shields.io/npm/v/omni-antigravity-remote-chat?color=cc3534&logo=npm)](https://www.npmjs.com/package/omni-antigravity-remote-chat) [![npm downloads](https://img.shields.io/npm/dm/omni-antigravity-remote-chat?color=blue&logo=npm)](https://www.npmjs.com/package/omni-antigravity-remote-chat) [![Docker](https://img.shields.io/docker/pulls/diegosouzapw/omni-antigravity-remote-chat?color=2496ED&logo=docker&logoColor=white)](https://hub.docker.com/r/diegosouzapw/omni-antigravity-remote-chat)
 
@@ -49,6 +49,15 @@ npx omni-antigravity-remote-chat
 ```
 
 É isso. Abra a URL no celular. Você está dentro. 🚀
+
+### Novidades na 1.2.0
+
+- **Suggest Mode** com fila de aprovações em vez de execução imediata
+- **Session Stats** e **Quota** dentro do workspace mobile
+- **Aba Assist** para perguntar ao supervisor o que está acontecendo
+- **Screenshot Timeline** com capturas persistidas em `data/screenshots/`
+- **Cinco temas** (`dark`, `light`, `slate`, `pastel`, `rainbow`)
+- **Suíte Vitest** com cobertura unitária e smoke expandido
 
 ---
 
@@ -109,8 +118,13 @@ antigravity . --remote-debugging-port=7800
 | 🪟  | **Multi-janela**           | Alterne entre múltiplas instâncias do Antigravity de um só celular         |
 | 🔄  | **Sync em tempo real**     | < 100ms de latência via WebSocket — atualizações aparecem instantaneamente |
 | 🤖  | **Troca de modelo**        | Alterne entre Gemini, Claude, GPT de um dropdown mobile                    |
-| 🤖  | **Remote Autonomy**        | Auto-detect and 1-tap accept/reject CLI instructions remotely            |
-| 📱  | **Telegram Alerts**        | Get push notifications for Blocks, Task completion and Pending actions   |
+| 🤖  | **Autonomia remota**       | Detecta e aprova/rejeita ações de CLI com um toque no celular            |
+| 🧠  | **Suggest Mode**           | Enfileira sugestões do supervisor para revisão manual                    |
+| 📊  | **Analytics de sessão**    | Acompanha erros, aprovações, uploads, quotas e atividade de tela         |
+| 📈  | **Visibilidade de quota**  | Lê limites reais de modelo do language server local do Antigravity       |
+| 💬  | **Workspace Assist**       | Pergunte ao supervisor por resumos, contexto e próximos passos           |
+| 🖼️  | **Timeline**               | Mantém histórico persistente de screenshots com captura manual/automática|
+| 📱  | **Alertas no Telegram**    | Receba notificações push para bloqueios, conclusão e aprovações pendentes|
 | 📋  | **Histórico de chat**      | Navegue e retome conversas anteriores no celular                           |
 | 🔒  | **Seguro por padrão**      | HTTPS, autenticação por senha, sessões por cookie, auto-auth na LAN        |
 | 🌐  | **Acesso remoto**          | Suporte a ngrok com QR code — acesse de qualquer lugar                     |
@@ -190,19 +204,44 @@ Instala automaticamente o [mkcert](https://github.com/FiloSottile/mkcert), cria 
 
 ---
 
+## 🧰 Workspace Remoto
+
+Na `1.2.0`, o workspace mobile passou a incluir:
+
+- **Files** para navegar e pré-visualizar arquivos
+- **Terminal** para executar comandos e ver saída remota
+- **Git** para status, stage, commit e push
+- **Assist** para conversar com o supervisor e disparar ações
+- **Stats** para analytics da sessão atual
+- **Timeline** para histórico persistente de screenshots
+- **Screen** para o stream ao vivo da janela
+
+Isso transforma o celular em uma superfície de operação, não apenas num espelho passivo do chat.
+
+---
+
 ## 🔑 Configuração
 
 ```bash
 cp .env.example .env
 ```
 
-| Variável          | Padrão          | Descrição                          |
-| ----------------- | --------------- | ---------------------------------- |
-| `APP_PASSWORD`    | `antigravity`   | Senha de autenticação              |
-| `PORT`            | `4747`          | Porta do servidor                  |
-| `COOKIE_SECRET`   | _(auto-gerado)_ | Segredo para assinatura de cookies |
-| `AUTH_SALT`       | _(auto-gerado)_ | Salt adicional para tokens de auth |
-| `NGROK_AUTHTOKEN` | _(opcional)_    | Para acesso remoto via ngrok       |
+| Variável                  | Padrão          | Descrição                                      |
+| ------------------------- | --------------- | ---------------------------------------------- |
+| `APP_PASSWORD`            | `antigravity`   | Senha de autenticação                          |
+| `PORT`                    | `4747`          | Porta do servidor                              |
+| `COOKIE_SECRET`           | _(auto-gerado)_ | Segredo para assinatura de cookies             |
+| `AUTH_SALT`               | _(auto-gerado)_ | Salt adicional para tokens de autenticação     |
+| `WORKSPACE_ROOT`          | raiz do repo    | Raiz exposta em Files, Terminal e Git          |
+| `AUTO_TUNNEL_PROVIDER`    | _(opcional)_    | Use `cloudflare` para quick tunnel no startup  |
+| `SUPERVISOR_SUGGEST_MODE` | `false`         | Enfileira ações do supervisor para revisão     |
+| `SUPERVISOR_MAX_QUEUE`    | `10`            | Máximo de sugestões pendentes                  |
+| `QUOTA_ENABLED`           | `false`         | Ativa polling de quota em background           |
+| `QUOTA_POLL_INTERVAL`     | `300000`        | Intervalo do polling de quota em ms            |
+| `SCREENSHOT_ENABLED`      | `false`         | Ativa captura automática da timeline           |
+| `SCREENSHOT_INTERVAL`     | `60000`         | Intervalo da timeline em ms                    |
+| `SCREENSHOT_MAX`          | `100`           | Máximo de screenshots persistidos em disco     |
+| `NGROK_AUTHTOKEN`         | _(opcional)_    | Para acesso remoto via ngrok                   |
 
 ---
 

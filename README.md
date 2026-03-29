@@ -11,7 +11,7 @@
 <br/>
 <br/>
 
-![Version](https://img.shields.io/badge/version-1.0.1-6366f1) ![Node](https://img.shields.io/badge/node-22%2B-10b981) ![CI](https://github.com/diegosouzapw/OmniAntigravityRemoteChat/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-6366f1) ![Node](https://img.shields.io/badge/node-22%2B-10b981) ![CI](https://github.com/diegosouzapw/OmniAntigravityRemoteChat/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 [![npm](https://img.shields.io/npm/v/omni-antigravity-remote-chat?color=cc3534&logo=npm)](https://www.npmjs.com/package/omni-antigravity-remote-chat) [![npm downloads](https://img.shields.io/npm/dm/omni-antigravity-remote-chat?color=blue&logo=npm)](https://www.npmjs.com/package/omni-antigravity-remote-chat) [![Docker](https://img.shields.io/docker/pulls/diegosouzapw/omni-antigravity-remote-chat?color=2496ED&logo=docker&logoColor=white)](https://hub.docker.com/r/diegosouzapw/omni-antigravity-remote-chat)
 
@@ -49,6 +49,15 @@ npx omni-antigravity-remote-chat
 ```
 
 That's it. Open the URL on your phone. You're in. 🚀
+
+### New in 1.2.0
+
+- **Suggest Mode** with queued approvals instead of immediate execution
+- **Session Stats** and **Quota** panels inside the mobile workspace
+- **Assist tab** for asking the supervisor what is happening right now
+- **Screenshot Timeline** with persistent captures in `data/screenshots/`
+- **Five themes** (`dark`, `light`, `slate`, `pastel`, `rainbow`)
+- **Vitest unit suite** plus expanded smoke coverage
 
 ---
 
@@ -110,6 +119,11 @@ antigravity . --remote-debugging-port=7800
 | 🔄  | **Real-time sync**     | < 100ms latency via WebSocket — chat updates appear instantly            |
 | 🤖  | **Model switching**    | Toggle between Gemini, Claude, GPT from a mobile dropdown                |
 | 🤖  | **Remote Autonomy**    | Auto-detect and 1-tap accept/reject CLI instructions remotely            |
+| 🧠  | **Suggest Mode**       | Queue supervisor suggestions for manual review before desktop execution  |
+| 📊  | **Session Analytics**  | Track errors, approvals, uploads, quota warnings and screen activity     |
+| 📈  | **Quota Visibility**   | Read real model limits from the local Antigravity language server        |
+| 💬  | **Assist Workspace**   | Ask the supervisor for summaries, context and next actions               |
+| 🖼️  | **Timeline**           | Keep a persistent screenshot history with manual and automatic captures  |
 | 📱  | **Telegram Alerts**    | Get push notifications for Blocks, Task completion and Pending actions   |
 | 📋  | **Chat history**       | Browse and resume past conversations on mobile                           |
 | 🔒  | **Secure by default**  | HTTPS, password auth, cookie sessions, LAN auto-auth                     |
@@ -154,6 +168,16 @@ Manage **multiple Antigravity instances** from a single phone:
 | ngrok tunnel | `npm run start:web`   | `omni-chat` + `npx ngrok http 4747` | —                |
 | SSL setup    | `npm run setup:ssl`   | Manual with `mkcert`                | Not needed       |
 
+### Windows & WSL Integration
+
+```bash
+# In PowerShell (Run as Administrator)
+cd scripts/windows-wsl-remote
+./Start-OmniChat.ps1
+```
+
+> **Context Menu:** This script sets up a handy right-click "Open OmniChat & Antigravity" shortcut on Windows that seamlessly launches your project inside WSL. See [scripts/windows-wsl-remote/README.md](scripts/windows-wsl-remote/README.md) for full instructions.
+
 <details>
 <summary>📖 Full launch mode details</summary>
 
@@ -190,19 +214,44 @@ Auto-installs [mkcert](https://github.com/FiloSottile/mkcert), creates a local C
 
 ---
 
+## 🧰 Remote Workspace
+
+The mobile workspace is no longer just a side panel. In `1.2.0` it includes:
+
+- **Files** for browsing and previewing project files
+- **Terminal** for remote commands and output streaming
+- **Git** for status, staging, commit and push shortcuts
+- **Assist** for supervisor-backed chat with action buttons
+- **Stats** for live session analytics
+- **Timeline** for persistent screenshot history
+- **Screen** for the live screencast stream
+
+This makes the phone UI useful for both passive monitoring and active intervention without leaving the browser.
+
+---
+
 ## 🔑 Configuration
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable          | Default            | Description                     |
-| ----------------- | ------------------ | ------------------------------- |
-| `APP_PASSWORD`    | `antigravity`      | Authentication password         |
-| `PORT`            | `4747`             | Server port                     |
-| `COOKIE_SECRET`   | _(auto-generated)_ | Secret for cookie signing       |
-| `AUTH_SALT`       | _(auto-generated)_ | Additional salt for auth tokens |
-| `NGROK_AUTHTOKEN` | _(optional)_       | For remote access via ngrok     |
+| Variable                  | Default            | Description                                   |
+| ------------------------- | ------------------ | --------------------------------------------- |
+| `APP_PASSWORD`            | `antigravity`      | Authentication password                       |
+| `PORT`                    | `4747`             | Server port                                   |
+| `COOKIE_SECRET`           | _(auto-generated)_ | Secret for cookie signing                     |
+| `AUTH_SALT`               | _(auto-generated)_ | Additional salt for auth tokens               |
+| `WORKSPACE_ROOT`          | repo root          | Root exposed in Files, Terminal and Git       |
+| `AUTO_TUNNEL_PROVIDER`    | _(optional)_       | Set to `cloudflare` for quick tunnel startup  |
+| `SUPERVISOR_SUGGEST_MODE` | `false`            | Queue supervisor actions for human review     |
+| `SUPERVISOR_MAX_QUEUE`    | `10`               | Maximum pending suggestions                   |
+| `QUOTA_ENABLED`           | `false`            | Enable background quota polling               |
+| `QUOTA_POLL_INTERVAL`     | `300000`           | Quota polling interval in ms                  |
+| `SCREENSHOT_ENABLED`      | `false`            | Enable automatic screenshot timeline capture  |
+| `SCREENSHOT_INTERVAL`     | `60000`            | Timeline capture interval in ms               |
+| `SCREENSHOT_MAX`          | `100`              | Maximum screenshots persisted on disk         |
+| `NGROK_AUTHTOKEN`         | _(optional)_       | For remote access via ngrok                   |
 
 ---
 
