@@ -92,13 +92,21 @@ let AUTH_TOKEN = 'ag_default_token';
 
 /** @type {import('ws').WebSocketServer | null} */
 let websocketServer = null;
+/** @type {(() => void) | null} */
 let suggestionQueueUnsubscribe = null;
+/** @type {(() => void) | null} */
 let sessionStatsUnsubscribe = null;
+/** @type {(() => void) | null} */
 let quotaServiceUnsubscribe = null;
+/** @type {(() => void) | null} */
 let timelineUnsubscribe = null;
+const TELEGRAM_CONFIGURED = Boolean(
+    process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
+);
 
 const serverStartedAt = new Date().toISOString();
 const MAX_SERVER_LOGS = 250;
+/** @type {Array<{level: string, message: string, timestamp: string}>} */
 const serverLogs = [];
 const tunnelManager = new CloudflareTunnelManager();
 let tunnelProvider = '';
@@ -107,6 +115,7 @@ const screenStreamState = {
     active: false,
     startedAt: '',
     lastFrameAt: '',
+    /** @type {((params: any) => Promise<void>) | null} */
     listener: null
 };
 
@@ -149,6 +158,18 @@ for (const level of /** @type {const} */ (['log', 'info', 'warn', 'error'])) {
  */
 function getServerLogs(limit = 80) {
     return serverLogs.slice(-Math.max(1, limit));
+}
+
+/**
+ * Track delivered Telegram notifications only when Telegram is configured.
+ * `sendTelegramNotification()` returns true when disabled, so we gate metrics here.
+ *
+ * @param {boolean} sent
+ */
+function trackTelegramNotification(sent) {
+    if (sent && TELEGRAM_CONFIGURED) {
+        sessionStats.increment('telegramNotificationsSent');
+    }
 }
 
 function getSuggestionState() {
@@ -225,6 +246,7 @@ async function captureCurrentScreenshot({ format = 'jpeg', quality = 70 } = {}) 
     }
 
     try {
+        /** @type {any} */
         const params = { format };
         if (format !== 'png') {
             params.quality = quality;
@@ -236,7 +258,7 @@ async function captureCurrentScreenshot({ format = 'jpeg', quality = 70 } = {}) 
             data: result.data,
             mimeType: format === 'png' ? 'image/png' : 'image/jpeg'
         };
-    } catch (error) {
+    } catch (e) { const error = /** @type {Error} */ (e);
         return {
             success: false,
             error: error.message
@@ -244,6 +266,7 @@ async function captureCurrentScreenshot({ format = 'jpeg', quality = 70 } = {}) 
     }
 }
 
+/** @param {string} id */
 async function approveQueuedSuggestion(id) {
     const suggestion = suggestQueue.find(id);
     if (!suggestion) {
@@ -284,6 +307,7 @@ async function approveQueuedSuggestion(id) {
     };
 }
 
+/** @param {string} id */
 function rejectQueuedSuggestion(id) {
     const suggestion = suggestQueue.find(id);
     if (!suggestion) {
@@ -426,7 +450,7 @@ async function maybeStartAutoTunnel() {
     try {
         const url = await tunnelManager.start(Number(SERVER_PORT));
         console.log(`☁️ Cloudflare tunnel ready: ${url}`);
-    } catch (error) {
+    } catch (e) { const error = /** @type {Error} */ (e);
         console.warn(`⚠️ Cloudflare tunnel failed: ${error.message}`);
     }
 }
@@ -1764,7 +1788,8 @@ async function startPolling(wss) {
     }, 30000);
 
     // Broadcast CDP status to all mobile clients
-    function broadcastCDPStatus(status) {
+    /** @param {string} status */
+function broadcastCDPStatus(status) {
         broadcast({ type: 'cdp_status', status, timestamp: new Date().toISOString() });
     }
 
@@ -1799,7 +1824,7 @@ async function startPolling(wss) {
                     sessionStats.logAction('cdp_reconnected');
                     broadcastCDPStatus('connected');
                 }
-            } catch (err) {
+            } catch (e) { const err = /** @type {Error} */ (e);
                 reconnectAttempts++;
                 reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY);
                 if (reconnectAttempts % 5 === 0) {
@@ -1836,7 +1861,7 @@ async function startPolling(wss) {
                             timestamp: new Date().toISOString()
                         });
                         sendTelegramNotification(`${emoji} <b>Antigravity Alert:</b> ${dialogError.error}`).then((sent) => {
-                            if (sent) sessionStats.increment('telegramNotificationsSent');
+                            trackTelegramNotification(sent);
                         }).catch(() => {});
                     }
                 } catch (dialogErr) {
@@ -1871,7 +1896,7 @@ async function startPolling(wss) {
                                 if (result.created) {
                                     console.log(`📝 Supervisor queued suggestion (${review.suggestedAction}) for pending action`);
                                 }
-                            } catch (error) {
+                            } catch (e) { const error = /** @type {Error} */ (e);
                                 console.warn(`Supervisor suggest-mode review failed: ${error.message}`);
                             }
                         }
@@ -1896,11 +1921,11 @@ async function startPolling(wss) {
                                         timestamp: new Date().toISOString()
                                     });
                                     sendTelegramNotification('✅ <b>Antigravity Supervisor:</b> uma aprovacao segura foi liberada automaticamente.').then((sent) => {
-                                        if (sent) sessionStats.increment('telegramNotificationsSent');
+                                        trackTelegramNotification(sent);
                                     }).catch(() => {});
                                 }
                             }
-                            } catch (error) {
+                            } catch (e) { const error = /** @type {Error} */ (e);
                                 console.warn(`Supervisor check failed: ${error.message}`);
                             }
                         }
@@ -1916,7 +1941,7 @@ async function startPolling(wss) {
                             });
                             console.log(`⚠️ Alert triggered: Action Pending`);
                             sendTelegramNotification('⚠️ <b>Antigravity Action Required!</b>\\nO Agente parou a execução e aguarda aprovação manual.').then((sent) => {
-                                if (sent) sessionStats.increment('telegramNotificationsSent');
+                                trackTelegramNotification(sent);
                             }).catch(() => {});
                         }
                     }
@@ -1958,7 +1983,7 @@ async function startPolling(wss) {
                         
                         const emoji = notifyType === 'task_completed' ? '✅' : '🚨';
                         sendTelegramNotification(`${emoji} <b>Antigravity Notification:</b> ${notifyMessage}`).then((sent) => {
-                            if (sent) sessionStats.increment('telegramNotificationsSent');
+                            trackTelegramNotification(sent);
                         }).catch(() => {});
                     }
                 }
@@ -1990,7 +2015,7 @@ async function startPolling(wss) {
                     lastErrorLog = now;
                 }
             }
-        } catch (err) {
+        } catch (e) { const err = /** @type {Error} */ (e);
             console.error('Poll error:', err.message);
         }
 
@@ -2060,7 +2085,7 @@ async function createServer() {
                     timestamp: new Date().toISOString()
                 });
                 sendSuggestionRequired(payload).then((sent) => {
-                    if (sent) sessionStats.increment('telegramNotificationsSent');
+                    trackTelegramNotification(sent);
                 }).catch(() => {});
             } else {
                 broadcast({
@@ -2100,7 +2125,7 @@ async function createServer() {
                         : ''
                 ].filter(Boolean).join('\n')
             ).then((sent) => {
-                if (sent) sessionStats.increment('telegramNotificationsSent');
+                trackTelegramNotification(sent);
             }).catch(() => {});
         });
     }
@@ -2407,7 +2432,7 @@ async function createServer() {
                 force: true
             });
             res.json(result);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             sessionStats.logError('timeline_capture', error.message);
             res.status(error.message.includes('CDP disconnected') ? 503 : 500).json({
                 error: error.message,
@@ -2444,7 +2469,7 @@ async function createServer() {
                 length: message.length
             });
             res.json(result);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             sessionStats.logError('assist_chat', error.message);
             res.status(500).json({ error: error.message });
         }
@@ -2484,7 +2509,7 @@ async function createServer() {
         try {
             const commands = await loadQuickCommands();
             res.json({ commands });
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(500).json({ error: error.message });
         }
     });
@@ -2494,7 +2519,7 @@ async function createServer() {
         try {
             const data = await listWorkspace(String(req.query.path || '.'));
             res.json(data);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2503,7 +2528,7 @@ async function createServer() {
         try {
             const data = await readWorkspaceFile(String(req.query.path || ''));
             res.json(data);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2517,7 +2542,7 @@ async function createServer() {
         try {
             const data = await terminalManager.run(String(req.body.command || ''));
             res.json(data);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2532,7 +2557,7 @@ async function createServer() {
         try {
             const summary = await getGitSummary();
             res.json(summary);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(500).json({ error: error.message });
         }
     });
@@ -2541,7 +2566,7 @@ async function createServer() {
         try {
             const result = await gitAdd(Array.isArray(req.body.paths) ? req.body.paths : []);
             res.json(result);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2550,7 +2575,7 @@ async function createServer() {
         try {
             const result = await gitCommit(String(req.body.message || ''));
             res.json(result);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2559,7 +2584,7 @@ async function createServer() {
         try {
             const result = await gitPush();
             res.json(result);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2573,7 +2598,7 @@ async function createServer() {
         try {
             const status = await startScreencast();
             res.json(status);
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2618,13 +2643,13 @@ async function createServer() {
                 upload: saved,
                 injection
             });
-            if (injection?.ok !== false) {
+            if (inject && injection && injection.ok !== false) {
                 sessionStats.increment('uploadsInjected');
                 sessionStats.logAction('image_uploaded', {
                     name: saved.name
                 });
             }
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2663,7 +2688,7 @@ async function createServer() {
                 quickCommandsCount: commands.length,
                 recentLogs: getServerLogs(40)
             });
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(500).json({ error: error.message });
         }
     });
@@ -2673,7 +2698,7 @@ async function createServer() {
             const commands = await saveQuickCommands(req.body.commands);
             broadcast({ type: 'quick_commands_updated', commands, timestamp: new Date().toISOString() });
             res.json({ commands });
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(400).json({ error: error.message });
         }
     });
@@ -2696,7 +2721,7 @@ async function createServer() {
             const url = await tunnelManager.start(Number(SERVER_PORT));
             broadcast({ type: 'tunnel_status', status: tunnelManager.getStatus(), timestamp: new Date().toISOString() });
             res.json({ success: true, url, provider });
-        } catch (error) {
+        } catch (e) { const error = /** @type {Error} */ (e);
             res.status(500).json({ error: error.message });
         }
     });
@@ -2786,7 +2811,7 @@ async function createServer() {
             url, title, bodyLen, hasCascade,
             buttons, lucideIcons: allLucideElements
         };
-    } catch (err) {
+    } catch (e) { const err = /** @type {Error} */ (e);
         return { error: err.toString(), stack: err.stack };
     }
 })()`;
@@ -2979,7 +3004,7 @@ async function createServer() {
 async function main() {
     try {
         cdpConnection = await initCDP();
-    } catch (err) {
+    } catch (e) { const err = /** @type {Error} */ (e);
         console.warn(`⚠️  Initial CDP discovery failed: ${err.message}`);
         console.log('💡 Start Antigravity with --remote-debugging-port=7800 to connect.');
     }
@@ -3030,7 +3055,7 @@ async function main() {
                 lastSnapshotHash = null;
                 console.log(`✅ Connected to: ${target.title}`);
                 res.json({ success: true, target: target.title });
-            } catch (err) {
+            } catch (e) { const err = /** @type {Error} */ (e);
                 res.status(500).json({ error: `Failed to connect: ${err.message}` });
             }
         });
@@ -3092,7 +3117,7 @@ async function main() {
                 // We don't automatically connect here; the polling loop will see it 
                 // and the user can select it via the UI context menu.
                 res.json({ success: true, port: newPort });
-            } catch (err) {
+            } catch (e) { const err = /** @type {Error} */ (e);
                 console.error('Failed to launch new window:', err);
                 res.status(500).json({ error: err.message });
             }
@@ -3224,7 +3249,7 @@ async function main() {
         process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
         process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
 
-    } catch (err) {
+    } catch (e) { const err = /** @type {Error} */ (e);
         console.error('❌ Fatal error:', err.message);
         process.exit(1);
     }

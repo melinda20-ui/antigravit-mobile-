@@ -196,6 +196,11 @@ function normalizeCommandSignature(value) {
         .slice(0, 320);
 }
 
+/**
+ * @param {any[]} history
+ * @param {number} maxItems
+ * @returns {any[]}
+ */
 function trimConversation(history, maxItems = 12) {
     if (!Array.isArray(history) || history.length <= maxItems) {
         return Array.isArray(history) ? history.slice() : [];
@@ -203,6 +208,10 @@ function trimConversation(history, maxItems = 12) {
     return history.slice(-maxItems);
 }
 
+/**
+ * @param {Record<string, any>} quota
+ * @returns {string}
+ */
 function summarizeTopQuotaModel(quota) {
     if (!quota?.available || !Array.isArray(quota.models) || !quota.models.length) {
         return 'Quota data is currently unavailable.';
@@ -212,6 +221,11 @@ function summarizeTopQuotaModel(quota) {
     return `${top.name} is currently the hottest model at ${top.usagePercent}% used.`;
 }
 
+/**
+ * @param {string} message
+ * @param {Record<string, any>} context
+ * @returns {string}
+ */
 function buildLocalAssistReply(message, context = {}) {
     const lower = String(message || '').toLowerCase();
     const stats = context.stats || {};
@@ -286,6 +300,11 @@ function buildLocalAssistReply(message, context = {}) {
     return lines.join('\n\n').trim();
 }
 
+/**
+ * @param {string} text
+ * @param {Record<string, any>} context
+ * @returns {{reply: string, actions: {type: string, label: string}[]}}
+ */
 function extractAssistActions(text, context = {}) {
     const matches = Array.from(String(text || '').matchAll(/\[ACTION:([a-z_]+)\]/gi));
     const actions = [];
@@ -365,11 +384,11 @@ export class SuggestQueue {
     constructor(options = {}) {
         this.queue = /** @type {InternalSuggestionItem[]} */ ([]);
         this.listeners = new Set();
-        this.maxSize = Number.isFinite(options.maxSize) && options.maxSize > 0
-            ? options.maxSize
+        this.maxSize = Number.isFinite(options?.maxSize) && (options?.maxSize || 0) > 0
+            ? /** @type {number} */ (options.maxSize)
             : getSupervisorMaxQueue();
-        this.ttlMs = Number.isFinite(options.ttlMs) && options.ttlMs > 0
-            ? options.ttlMs
+        this.ttlMs = Number.isFinite(options?.ttlMs) && (options?.ttlMs || 0) > 0
+            ? /** @type {number} */ (options.ttlMs)
             : SUGGESTION_TTL_MS;
     }
 
@@ -393,9 +412,8 @@ export class SuggestQueue {
         this.syncConfig();
         while (this.queue.length > this.maxSize) {
             const removed = this.queue.shift();
-            if (removed) {
-                this.notify('dropped', removed);
-            }
+            if (!removed) break;
+            this.notify('dropped', removed);
         }
     }
 
@@ -650,6 +668,10 @@ export class AISupervisor {
         };
     }
 
+    /**
+     * @param {any[]} messages
+     * @returns {Promise<string>}
+     */
     async requestChatResponse(messages) {
         const response = await fetch(this.url, {
             method: 'POST',
@@ -756,11 +778,16 @@ export class AISupervisor {
                 source: 'omniroute',
                 reason: 'supervisor-error',
                 commandText,
-                summary: `Supervisor failed to analyze the action: ${error.message}`
+                summary: `Supervisor failed to analyze the action: ${(/** @type {Error} */ (error)).message}`
             };
         }
     }
 
+    /**
+     * @param {string} message
+     * @param {Record<string, any>} context
+     * @returns {Promise<{reply: string, actions: {type: string, label: string}[], source: string, history: any[]}>}
+     */
     async chatWithUser(message, context = {}) {
         const userMessage = String(message || '').trim();
         if (!userMessage) {
@@ -813,7 +840,7 @@ export class AISupervisor {
                 rawReply = [
                     buildLocalAssistReply(userMessage, context),
                     '',
-                    `Remote supervisor unavailable: ${error.message}`
+                    `Remote supervisor unavailable: ${(/** @type {Error} */ (error)).message}`
                 ].join('\n').trim();
                 source = 'fallback';
             }

@@ -18,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 💬 **Assist workspace tab** — Added supervisor-backed assist chat history, `/api/assist/*` endpoints, contextual action buttons, and markdown rendering in the mobile workspace.
 - 🖼️ **Screenshot timeline** — Added persistent captures in `data/screenshots/`, `/api/timeline*` routes, background change-aware capture scheduling, cleanup, and a dedicated mobile Timeline panel.
 - 🧪 **Vitest suite** — Added unit tests for config, hash, network, supervisor, Telegram, session stats, quota, and screenshot timeline, with coverage tooling and `test:unit` scripts.
+- 🪟 **Windows & WSL2 Integration** — Added PowerShell context menu scripts (`Start-OmniChat.ps1`, `Start-OmniChat-Ngrok.ps1`) for seamless 1-click execution in WSL2 environments directly from the native Windows File Explorer.
 
 ### Changed
 
 - 🤖 **AI Supervisor transport** — Replaced the Ollama-specific supervisor transport with an OmniRoute OpenAI-compatible integration (`/v1/chat/completions`) plus `OMNIROUTE_SUPERVISOR_*` environment variables.
+- ⚙️ **Customizable CDP Ports** — Added `CDP_PORTS` environment variable support in `.env` for configurable remote debugging port ranges.
 - 📦 **Release versioning** — Synchronized package/runtime metadata to `1.2.0` and refreshed release documentation for the current feature set.
 
 ## [1.1.0] - 2026-03-29

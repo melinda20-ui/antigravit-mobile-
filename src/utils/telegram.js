@@ -28,6 +28,7 @@ let botInitialized = false;
 let botAvailable = false;
 
 /** Rate limiting sliding window */
+/** @type {number[]} */
 const rateLimitWindow = [];
 
 /** Message threading: type → { messageId, timestamp } */
@@ -46,13 +47,21 @@ const notificationToggles = {
 };
 
 /** External hooks (set by server.js) */
+/** @type {(() => Promise<any>) | null} */
 let onApproveAction = null;
+/** @type {(() => Promise<any>) | null} */
 let onRejectAction = null;
+/** @type {(() => Promise<any>) | null} */
 let onStatusRequest = null;
+/** @type {(() => Promise<any>) | null} */
 let onStatsRequest = null;
+/** @type {(() => Promise<any>) | null} */
 let onQuotaRequest = null;
+/** @type {(() => Promise<any>) | null} */
 let onScreenshotRequest = null;
+/** @type {((id: string) => Promise<any>) | null} */
 let onSuggestionApprove = null;
+/** @type {((id: string) => Promise<any>) | null} */
 let onSuggestionReject = null;
 
 // ─── Lazy Load ──────────────────────────────────────────────────────
@@ -94,7 +103,7 @@ async function ensureBotLoaded() {
         console.log('[Telegram] Bot initialized with polling ✅');
         return true;
     } catch (e) {
-        console.log(`[Telegram] Bot unavailable: ${e.message}`);
+        console.log(`[Telegram] Bot unavailable: ${(/** @type {Error} */ (e)).message}`);
         console.log('[Telegram] Install with: npm install node-telegram-bot-api');
         return false;
     }
@@ -145,9 +154,7 @@ function setThreadId(threadType, messageId) {
 /**
  * Send a text message via Telegram (simple webhook fallback if bot unavailable).
  * @param {string} message - HTML-formatted message
- * @param {object} [options] - Extra options
- * @param {string} [options.threadType] - Thread grouping key
- * @param {Array<Array<{text: string, callback_data: string}>>} [options.inlineKeyboard] - Inline buttons
+ * @param {{threadType?: string, inlineKeyboard?: Array<Array<{text: string, callback_data: string}>>}} [options={}] - Extra options
  * @returns {Promise<boolean>}
  */
 export async function sendTelegramNotification(message, options = {}) {
@@ -164,6 +171,8 @@ export async function sendTelegramNotification(message, options = {}) {
 
 /**
  * Send via the full bot API with threading and inline keyboards.
+ * @param {string} message
+ * @param {{threadType?: string, inlineKeyboard?: Array<Array<{text: string, callback_data: string}>>}} [options={}]
  */
 async function sendViaBotApi(message, options = {}) {
     if (isRateLimited()) {
@@ -172,6 +181,7 @@ async function sendViaBotApi(message, options = {}) {
     }
 
     try {
+        /** @type {Record<string, any>} */
         const sendOptions = {
             parse_mode: 'HTML',
             disable_web_page_preview: true
@@ -201,13 +211,14 @@ async function sendViaBotApi(message, options = {}) {
 
         return true;
     } catch (e) {
-        console.error(`[Telegram] Send failed: ${e.message}`);
+        console.error(`[Telegram] Send failed: ${(/** @type {Error} */ (e)).message}`);
         return false;
     }
 }
 
 /**
  * Fallback: send via simple HTTP webhook (no bot API dependency).
+ * @param {string} message
  */
 async function sendViaWebhook(message) {
     try {
@@ -228,7 +239,7 @@ async function sendViaWebhook(message) {
         }
         return true;
     } catch (error) {
-        console.error('[Telegram] Webhook error:', error.message);
+        console.error('[Telegram] Webhook error:', (/** @type {Error} */ (error)).message);
         return false;
     }
 }
@@ -243,7 +254,7 @@ async function sendViaWebhook(message) {
  */
 export async function sendTypedNotification(type, message, extra = {}) {
     // Check toggle
-    if (type in notificationToggles && !notificationToggles[type]) {
+    if (type in notificationToggles && !/** @type {Record<string, boolean>} */ (notificationToggles)[type]) {
         return true;
     }
 
@@ -288,12 +299,19 @@ export async function sendSuggestionRequired(suggestion) {
     });
 }
 
+/**
+ * @param {number|string} usagePercent
+ * @param {number} [width=10]
+ */
 function buildQuotaBar(usagePercent, width = 10) {
     const clamped = Math.max(0, Math.min(100, Number(usagePercent) || 0));
     const filled = Math.round((clamped / 100) * width);
     return `${'▓'.repeat(filled)}${'░'.repeat(width - filled)}`;
 }
 
+/**
+ * @param {string|Date|number} resetTime
+ */
 function formatQuotaReset(resetTime) {
     if (!resetTime) return 'Unknown';
     const parsed = new Date(resetTime);
@@ -301,6 +319,9 @@ function formatQuotaReset(resetTime) {
     return parsed.toLocaleTimeString();
 }
 
+/**
+ * @param {Record<string, any>} summary
+ */
 function formatQuotaMessage(summary) {
     if (!summary?.available) {
         return [
@@ -508,21 +529,21 @@ function registerCommandHandlers() {
                     bot.sendMessage(msg.chat.id, '❌ Screenshot capture failed');
                 }
             } catch (e) {
-                bot.sendMessage(msg.chat.id, `❌ Screenshot error: ${e.message}`);
+                bot.sendMessage(msg.chat.id, `❌ Screenshot error: ${(/** @type {Error} */ (e)).message}`);
             }
         } else {
             bot.sendMessage(msg.chat.id, '⚪ Screenshot hook not configured');
         }
     });
 
-    bot.onText(/\/toggles/, (msg) => {
+    bot.onText(/\/toggles/, (/** @type {any} */ msg) => {
         if (String(msg.chat.id) !== TELEGRAM_CHAT_ID) return;
         const toggleList = Object.entries(notificationToggles)
             .map(([key, val]) => `${val ? '🟢' : '⚪'} ${key}`)
             .join('\n');
 
         const keyboard = Object.keys(notificationToggles).map(key => [{
-            text: `${notificationToggles[key] ? '🟢' : '⚪'} ${key}`,
+            text: `${/** @type {Record<string, boolean>} */ (notificationToggles)[key] ? '🟢' : '⚪'} ${key}`,
             callback_data: `toggle_${key}`
         }]);
 
@@ -541,7 +562,7 @@ function registerCommandHandlers() {
 function registerCallbackHandlers() {
     if (!bot) return;
 
-    bot.on('callback_query', async (query) => {
+    bot.on('callback_query', async (/** @type {any} */ query) => {
         if (String(query.message?.chat?.id) !== TELEGRAM_CHAT_ID) return;
 
         const data = query.data || '';
@@ -554,10 +575,12 @@ function registerCallbackHandlers() {
                     text: result.success ? '✅ Approved' : '❌ Failed',
                     show_alert: !result.success
                 });
-                await bot.editMessageReplyMarkup(
-                    { inline_keyboard: [] },
-                    { chat_id: query.message.chat.id, message_id: query.message.message_id }
-                );
+                if (result.success) {
+                    await bot.editMessageReplyMarkup(
+                        { inline_keyboard: [] },
+                        { chat_id: query.message.chat.id, message_id: query.message.message_id }
+                    );
+                }
             } catch (e) {
                 await bot.answerCallbackQuery(query.id, { text: '❌ Error', show_alert: true });
             }
@@ -571,10 +594,12 @@ function registerCallbackHandlers() {
                     text: result.success ? '✅ Rejected' : '❌ Failed',
                     show_alert: !result.success
                 });
-                await bot.editMessageReplyMarkup(
-                    { inline_keyboard: [] },
-                    { chat_id: query.message.chat.id, message_id: query.message.message_id }
-                );
+                if (result.success) {
+                    await bot.editMessageReplyMarkup(
+                        { inline_keyboard: [] },
+                        { chat_id: query.message.chat.id, message_id: query.message.message_id }
+                    );
+                }
             } catch (e) {
                 await bot.answerCallbackQuery(query.id, { text: '❌ Error', show_alert: true });
             }
@@ -625,14 +650,15 @@ function registerCallbackHandlers() {
         if (data.startsWith('toggle_')) {
             const key = data.replace('toggle_', '');
             if (key in notificationToggles) {
-                notificationToggles[key] = !notificationToggles[key];
+                const toggles = /** @type {Record<string, boolean>} */ (notificationToggles);
+                toggles[key] = !toggles[key];
                 await bot.answerCallbackQuery(query.id, {
-                    text: `${key}: ${notificationToggles[key] ? 'ON 🟢' : 'OFF ⚪'}`
+                    text: `${key}: ${toggles[key] ? 'ON 🟢' : 'OFF ⚪'}`
                 });
 
                 // Update the keyboard
                 const keyboard = Object.keys(notificationToggles).map(k => [{
-                    text: `${notificationToggles[k] ? '🟢' : '⚪'} ${k}`,
+                    text: `${toggles[k] ? '🟢' : '⚪'} ${k}`,
                     callback_data: `toggle_${k}`
                 }]);
                 try {
@@ -654,14 +680,14 @@ function registerCallbackHandlers() {
 /**
  * Register server-side action hooks for Telegram commands.
  * @param {object} hooks
- * @param {Function} [hooks.onApprove] - Called when /approve or inline approve pressed
- * @param {Function} [hooks.onReject] - Called when /reject or inline reject pressed
- * @param {Function} [hooks.onStatus] - Called when /status pressed
- * @param {Function} [hooks.onStats] - Called when /stats pressed
- * @param {Function} [hooks.onQuota] - Called when /quota pressed
- * @param {Function} [hooks.onScreenshot] - Called when /screenshot pressed
- * @param {Function} [hooks.onSuggestionApprove] - Called when a suggestion approve inline button is pressed
- * @param {Function} [hooks.onSuggestionReject] - Called when a suggestion reject inline button is pressed
+ * @param {() => Promise<any>} [hooks.onApprove] - Called when /approve or inline approve pressed
+ * @param {() => Promise<any>} [hooks.onReject] - Called when /reject or inline reject pressed
+ * @param {() => Promise<any>} [hooks.onStatus] - Called when /status pressed
+ * @param {() => Promise<any>} [hooks.onStats] - Called when /stats pressed
+ * @param {() => Promise<any>} [hooks.onQuota] - Called when /quota pressed
+ * @param {() => Promise<any>} [hooks.onScreenshot] - Called when /screenshot pressed
+ * @param {(id: string) => Promise<any>} [hooks.onSuggestionApprove] - Called when a suggestion approve inline button is pressed
+ * @param {(id: string) => Promise<any>} [hooks.onSuggestionReject] - Called when a suggestion reject inline button is pressed
  */
 export function registerTelegramHooks(hooks = {}) {
     if (hooks.onApprove) onApproveAction = hooks.onApprove;
@@ -705,7 +731,7 @@ export async function stopBot() {
             await bot.stopPolling();
             console.log('[Telegram] Bot stopped');
         } catch (e) {
-            console.error('[Telegram] Stop error:', e.message);
+            console.error('[Telegram] Stop error:', (/** @type {Error} */ (e)).message);
         }
     }
 }
