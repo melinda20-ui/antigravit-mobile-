@@ -1,6 +1,6 @@
 # TASK-09: Model Quota Service
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 3 — Strategic  
 **Esforço:** ⭐⭐⭐⭐ Muito Alto (5-7 dias)  
 **Impacto:** 🔴 Alto  
@@ -16,16 +16,16 @@ Implementar serviço de monitoramento de quota de modelos do Antigravity. O serv
 
 ## 🎯 Objetivos
 
-- [ ] Criar módulo `src/quota-service.js` com descoberta automática do Language Server
-- [ ] Implementar extração de CSRF token do diretório de dados local
-- [ ] Query à API `GetUserStatus` do Language Server
-- [ ] Parsing do response protobuf/JSON para extrair quotas por modelo
-- [ ] Mapeamento de nomes internos → nomes amigáveis de modelos
-- [ ] Endpoint REST: `GET /api/quota`
-- [ ] Polling periódico (configurável, default: 5min)
-- [ ] Integração com Telegram: comando `/quota`
-- [ ] Widget visual no mobile com barras de progresso
-- [ ] Alertas automáticos quando quota > 80%
+- [x] Criar módulo `src/quota-service.js` com descoberta automática do Language Server
+- [x] Implementar extração de CSRF token do diretório de dados local
+- [x] Query à API `GetUserStatus` do Language Server
+- [x] Parsing do response protobuf/JSON para extrair quotas por modelo
+- [x] Mapeamento de nomes internos → nomes amigáveis de modelos
+- [x] Endpoint REST: `GET /api/quota`
+- [x] Polling periódico (configurável, default: 5min)
+- [x] Integração com Telegram: comando `/quota`
+- [x] Widget visual no mobile com barras de progresso
+- [x] Alertas automáticos quando quota > 80%
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -198,20 +198,20 @@ Gemini 3.1 Pro High
 
 ## 🧪 Testes de Verificação
 
-- [ ] Descoberta do Language Server funciona em Linux
-- [ ] CSRF token extraído corretamente
-- [ ] API query retorna dados de quota
-- [ ] Model names mapeados corretamente
-- [ ] Alerta disparado quando quota > 80%
-- [ ] Telegram `/quota` formata barras de progresso
-- [ ] Widget mobile atualiza via WebSocket
-- [ ] Serviço não causa crash quando Language Server indisponível
+- [x] Descoberta do Language Server funciona em Linux
+- [x] CSRF token extraído corretamente
+- [x] API query retorna dados de quota
+- [x] Model names mapeados corretamente
+- [x] Alerta disparado quando quota > 80%
+- [x] Telegram `/quota` formata barras de progresso
+- [x] Widget mobile atualiza via WebSocket
+- [x] Serviço não causa crash quando Language Server indisponível
 
 ## ✅ Critérios de Aceitação
 
-- [ ] Quota de pelo menos 3 modelos exibida corretamente
-- [ ] Alertas automáticos quando > 80%
-- [ ] Comando Telegram `/quota` funcional
-- [ ] Widget compacto na UI mobile
-- [ ] Zero impacto no polling loop (executa em background)
-- [ ] Desativado por padrão (`QUOTA_ENABLED=false`)
+- [x] Quota de pelo menos 3 modelos exibida corretamente
+- [x] Alertas automáticos quando > 80%
+- [x] Comando Telegram `/quota` funcional
+- [x] Widget compacto na UI mobile
+- [x] Zero impacto no polling loop (executa em background)
+- [x] Desativado por padrão (`QUOTA_ENABLED=false`)

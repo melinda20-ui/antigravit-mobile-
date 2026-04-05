@@ -1,6 +1,6 @@
 # TASK-07: Supervisor Suggest Mode
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 2 — Medium Effort  
 **Esforço:** ⭐⭐ Médio (3-5 dias)  
 **Impacto:** 🟠 Médio  
@@ -17,13 +17,13 @@ Adicionar um modo "Suggest" ao supervisor existente onde, em vez de executar aç
 
 ## 🎯 Objetivos
 
-- [ ] Implementar `SuggestQueue` — fila de ações sugeridas pelo supervisor
-- [ ] Cada sugestão contém: ação proposta, razão, timestamp, status (pending/approved/rejected)
-- [ ] API REST para gerenciar a fila: list, approve, reject, clear
-- [ ] WebSocket broadcast quando nova sugestão é adicionada
-- [ ] Telegram notification com inline keyboard para aprovação rápida
-- [ ] Config toggle: `SUPERVISOR_SUGGEST_MODE=true/false`
-- [ ] Máximo de itens na fila configurável via `SUPERVISOR_MAX_QUEUE`
+- [x] Implementar `SuggestQueue` — fila de ações sugeridas pelo supervisor
+- [x] Cada sugestão contém: ação proposta, razão, timestamp, status (pending/approved/rejected)
+- [x] API REST para gerenciar a fila: list, approve, reject, clear
+- [x] WebSocket broadcast quando nova sugestão é adicionada
+- [x] Telegram notification com inline keyboard para aprovação rápida
+- [x] Config toggle: `SUPERVISOR_SUGGEST_MODE=true/false`
+- [x] Máximo de itens na fila configurável via `SUPERVISOR_MAX_QUEUE`
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -133,19 +133,19 @@ SUPERVISOR_MAX_QUEUE=10         # Tamanho máximo da fila
 
 ## 🧪 Testes de Verificação
 
-- [ ] Com `SUGGEST_MODE=false`: comportamento idêntico ao atual
-- [ ] Com `SUGGEST_MODE=true`: ações vão para a fila (não executadas automaticamente)
-- [ ] Aprovar uma sugestão executa `completePendingAction()`
-- [ ] Rejeitar uma sugestão marca como rejected sem ação
-- [ ] Fila respeita `MAX_QUEUE` (remove mais antigo quando cheia)
-- [ ] Telegram recebe notificação com botões approve/reject
-- [ ] WebSocket broadcast enviado para UI mobile
+- [x] Com `SUGGEST_MODE=false`: comportamento idêntico ao atual
+- [x] Com `SUGGEST_MODE=true`: ações vão para a fila (não executadas automaticamente)
+- [x] Aprovar uma sugestão executa `completePendingAction()`
+- [x] Rejeitar uma sugestão marca como rejected sem ação
+- [x] Fila respeita `MAX_QUEUE` (remove mais antigo quando cheia)
+- [x] Telegram recebe notificação com botões approve/reject
+- [x] WebSocket broadcast enviado para UI mobile
 
 ## ✅ Critérios de Aceitação
 
-- [ ] Toggle suggest mode via env var sem reiniciar
-- [ ] API REST CRUD completa para sugestões
-- [ ] Integração com Telegram (inline keyboard)
-- [ ] UI mobile mostra contador de sugestões pendentes
-- [ ] Zero breaking changes no fluxo auto-approve existente
-- [ ] Timeout: sugestões expiram após 30 minutos
+- [x] Toggle suggest mode via env var sem reiniciar
+- [x] API REST CRUD completa para sugestões
+- [x] Integração com Telegram (inline keyboard)
+- [x] UI mobile mostra contador de sugestões pendentes
+- [x] Zero breaking changes no fluxo auto-approve existente
+- [x] Timeout: sugestões expiram após 30 minutos

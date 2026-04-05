@@ -1,6 +1,6 @@
 # TASK-12: Screenshot Timeline
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 3 — Strategic  
 **Esforço:** ⭐⭐ Médio (3-5 dias)  
 **Impacto:** 🟡 Baixo  
@@ -16,13 +16,13 @@ Implementar captura automática de screenshots do IDE em intervalos configuráve
 
 ## 🎯 Objetivos
 
-- [ ] Captura automática de screenshots via CDP (`Page.captureScreenshot`)
-- [ ] Armazenamento em disco: `data/screenshots/` com naming temporal
-- [ ] Intervalo configurável (default: 60s, quando há mudanças no snapshot)
-- [ ] Timeline visual na UI mobile com thumbnails clicáveis
-- [ ] Endpoint REST para listar e recuperar screenshots
-- [ ] Limpeza automática (manter últimos N screenshots ou últimas X horas)
-- [ ] Exportar timeline como ZIP (opcional)
+- [x] Captura automática de screenshots via CDP (`Page.captureScreenshot`)
+- [x] Armazenamento em disco: `data/screenshots/` com naming temporal
+- [x] Intervalo configurável (default: 60s, quando há mudanças no snapshot)
+- [x] Timeline visual na UI mobile com thumbnails clicáveis
+- [x] Endpoint REST para listar e recuperar screenshots
+- [x] Limpeza automática (manter últimos N screenshots ou últimas X horas)
+- [x] Exportar timeline como ZIP (opcional)
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -249,19 +249,19 @@ SCREENSHOT_MAX=100                 # Máximo de screenshots armazenados
 
 ## 🧪 Testes de Verificação
 
-- [ ] Screenshot capturado e salvo em disco
-- [ ] Cleanup remove arquivos antigos quando > maxScreenshots
-- [ ] API lista screenshots em ordem reversa (mais recente primeiro)
-- [ ] Imagens JPEG servidas corretamente via REST
-- [ ] Captura manual via POST funciona
-- [ ] Timer não causa leak de memória
-- [ ] Desativado por padrão (`SCREENSHOT_ENABLED=false`)
+- [x] Screenshot capturado e salvo em disco
+- [x] Cleanup remove arquivos antigos quando > maxScreenshots
+- [x] API lista screenshots em ordem reversa (mais recente primeiro)
+- [x] Imagens JPEG servidas corretamente via REST
+- [x] Captura manual via POST funciona
+- [x] Timer não causa leak de memória
+- [x] Desativado por padrão (`SCREENSHOT_ENABLED=false`)
 
 ## ✅ Critérios de Aceitação
 
-- [ ] Captura automática funcional (change-based + interval)
-- [ ] Timeline visual com thumbnails no mobile
-- [ ] Click para expandir screenshot em full-screen
-- [ ] Cleanup automático (storage bounded)
-- [ ] API REST completa (list, get, delete, capture)
-- [ ] Zero impacto no polling loop (async, non-blocking)
+- [x] Captura automática funcional (change-based + interval)
+- [x] Timeline visual com thumbnails no mobile
+- [x] Click para expandir screenshot em full-screen
+- [x] Cleanup automático (storage bounded)
+- [x] API REST completa (list, get, delete, capture)
+- [x] Zero impacto no polling loop (async, non-blocking)

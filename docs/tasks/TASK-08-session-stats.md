@@ -1,6 +1,6 @@
 # TASK-08: Session Stats & Analytics
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 2 — Medium Effort  
 **Esforço:** ⭐⭐ Médio (2-3 dias)  
 **Impacto:** 🟡 Baixo  
@@ -16,12 +16,12 @@ Criar um módulo de analytics de sessão que rastreie métricas em tempo real: m
 
 ## 🎯 Objetivos
 
-- [ ] Criar módulo `src/session-stats.js` com tracking de métricas
-- [ ] Integrar no polling loop e nos handlers de ação
-- [ ] Widget resumo na UI mobile (stats bar ou modal)
-- [ ] Endpoint REST para consulta de stats
-- [ ] Reset automático por sessão (baseado em new-chat)
-- [ ] Comando `/stats` no Telegram bot
+- [x] Criar módulo `src/session-stats.js` com tracking de métricas
+- [x] Integrar no polling loop e nos handlers de ação
+- [x] Widget resumo na UI mobile (stats bar ou modal)
+- [x] Endpoint REST para consulta de stats
+- [x] Reset automático por sessão (baseado em new-chat)
+- [x] Comando `/stats` no Telegram bot
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -149,18 +149,18 @@ GET /api/stats → SessionStats.getSummary()
 
 ## 🧪 Testes de Verificação
 
-- [ ] Contador de mensagens incrementa corretamente
-- [ ] Reset funciona ao criar novo chat
-- [ ] Stats persistem durante reconexão CDP
-- [ ] API REST retorna JSON válido
-- [ ] Telegram `/stats` formata corretamente
-- [ ] UI widget atualiza em tempo real via WebSocket
+- [x] Contador de mensagens incrementa corretamente
+- [x] Reset funciona ao criar novo chat
+- [x] Stats persistem durante reconexão CDP
+- [x] API REST retorna JSON válido
+- [x] Telegram `/stats` formata corretamente
+- [x] UI widget atualiza em tempo real via WebSocket
 
 ## ✅ Critérios de Aceitação
 
-- [ ] 15+ métricas rastreadas de forma silenciosa (sem overhead)
-- [ ] Endpoint REST com resumo completo
-- [ ] Widget compacto na UI mobile
-- [ ] Comando `/stats` no Telegram
-- [ ] Reset automático por new-chat
-- [ ] Log circular de erros e ações (memória limitada)
+- [x] 15+ métricas rastreadas de forma silenciosa (sem overhead)
+- [x] Endpoint REST com resumo completo
+- [x] Widget compacto na UI mobile
+- [x] Comando `/stats` no Telegram
+- [x] Reset automático por new-chat
+- [x] Log circular de erros e ações (memória limitada)

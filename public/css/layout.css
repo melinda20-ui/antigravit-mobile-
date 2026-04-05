@@ -13,12 +13,14 @@ body::before {
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
 }
 
 .header,
@@ -31,6 +33,7 @@ body::before {
   padding: var(--space-md);
   background: var(--bg-panel);
   backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-bottom: var(--border-width) solid var(--border);
 }
 
@@ -88,6 +91,7 @@ body::before {
   background: var(--bg-panel-muted);
   border-bottom: var(--border-width) solid var(--border);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .history-layer,
@@ -134,7 +138,15 @@ body::before {
   align-items: flex-end;
   justify-content: center;
   background: var(--modal-backdrop);
+}
+
+.modal-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: -1;
 }
 
 .modal-overlay.show {
@@ -150,6 +162,7 @@ body::before {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
+  height: 100dvh;
 }
 
 .admin-shell {
