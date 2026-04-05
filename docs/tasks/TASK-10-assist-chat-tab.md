@@ -1,6 +1,6 @@
 # TASK-10: Assist Chat Tab
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 3 — Strategic  
 **Esforço:** ⭐⭐⭐ Alto (5-7 dias)  
 **Impacto:** 🟠 Médio  
@@ -16,14 +16,14 @@ Criar uma nova aba "Assist" na interface mobile que permite ao usuário conversa
 
 ## 🎯 Objetivos
 
-- [ ] Nova aba "Assist" no workspace panel (ao lado de Files, Terminal, Git)
-- [ ] Interface de chat bidirecional: usuário ↔ supervisor AI
-- [ ] Respostas do supervisor podem incluir ações clicáveis (approve/reject)
-- [ ] Streaming de respostas do supervisor (via OmniRoute/Ollama)
-- [ ] Histórico de conversas da sessão (in-memory)
-- [ ] Integração com Session Stats (mostra resumo quando perguntado)
-- [ ] Integração com Suggest Queue (mostra sugestões pendentes)
-- [ ] Markdown rendering nas respostas do supervisor
+- [x] Nova aba "Assist" no workspace panel (ao lado de Files, Terminal, Git)
+- [x] Interface de chat bidirecional: usuário ↔ supervisor AI
+- [x] Respostas do supervisor podem incluir ações clicáveis (approve/reject)
+- [x] Streaming de respostas do supervisor (via OmniRoute/Ollama)
+- [x] Histórico de conversas da sessão (in-memory)
+- [x] Integração com Session Stats (mostra resumo quando perguntado)
+- [x] Integração com Suggest Queue (mostra sugestões pendentes)
+- [x] Markdown rendering nas respostas do supervisor
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -175,19 +175,19 @@ DELETE /api/assist/history    → Limpar histórico
 
 ## 🧪 Testes de Verificação
 
-- [ ] Enviar mensagem e receber resposta do supervisor
-- [ ] Histórico mantido durante a sessão
-- [ ] Ações sugeridas renderizam como botões clicáveis
-- [ ] Markdown renderizado corretamente (code blocks, bold, etc.)
-- [ ] Mobile responsivo
-- [ ] Limpar histórico funciona
-- [ ] Tab "Assist" aparece e funciona no workspace panel
+- [x] Enviar mensagem e receber resposta do supervisor
+- [x] Histórico mantido durante a sessão
+- [x] Ações sugeridas renderizam como botões clicáveis
+- [x] Markdown renderizado corretamente (code blocks, bold, etc.)
+- [x] Mobile responsivo
+- [x] Limpar histórico funciona
+- [x] Tab "Assist" aparece e funciona no workspace panel
 
 ## ✅ Critérios de Aceitação
 
-- [ ] Chat funcional entre usuário e supervisor
-- [ ] Respostas contextuais (supervisor sabe estado da sessão)
-- [ ] Ações clicáveis inline nas respostas
-- [ ] Markdown rendering (pre, code, bold, italic)
-- [ ] Mobile-first responsive design
-- [ ] Tab integrada no workspace panel existente
+- [x] Chat funcional entre usuário e supervisor
+- [x] Respostas contextuais (supervisor sabe estado da sessão)
+- [x] Ações clicáveis inline nas respostas
+- [x] Markdown rendering (pre, code, bold, italic)
+- [x] Mobile-first responsive design
+- [x] Tab integrada no workspace panel existente

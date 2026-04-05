@@ -1,6 +1,6 @@
 # TASK-11: Unit Tests com Vitest
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 3 — Strategic  
 **Esforço:** ⭐⭐ Médio (3-5 dias)  
 **Impacto:** 🟠 Médio  
@@ -16,9 +16,9 @@ Configurar Vitest como framework de testes unitários e criar suite de testes ab
 
 ## 🎯 Objetivos
 
-- [ ] Instalar e configurar Vitest com ESM support
-- [ ] Criar `vitest.config.js` com coverage e watch mode
-- [ ] ≥ 20 testes unitários cobrindo:
+- [x] Instalar e configurar Vitest com ESM support
+- [x] Criar `vitest.config.js` com coverage e watch mode
+- [x] ≥ 20 testes unitários cobrindo:
   - `config.js` — valores padrão, env vars
   - `supervisor.js` — heurísticas (risky/safe patterns)
   - `utils/hash.js` — hash consistency
@@ -26,8 +26,8 @@ Configurar Vitest como framework de testes unitários e criar suite de testes ab
   - `utils/telegram.js` — rate limiting, threading, toggles
   - `session-stats.js` — métricas (se TASK-08 concluída)
   - `quota-service.js` — model name mapping (se TASK-09 concluída)
-- [ ] Script npm: `npm run test:unit`
-- [ ] CI/CD integration via GitHub Actions (opcional)
+- [x] Script npm: `npm run test:unit`
+- [x] CI/CD integration via GitHub Actions (opcional)
 
 ## 📁 Arquivos a Modificar/Criar
 
@@ -225,18 +225,18 @@ describe('Telegram Module', () => {
 
 ## 🧪 Testes de Verificação
 
-- [ ] `npm run test:unit` executa sem erros
-- [ ] ≥ 20 testes passando
-- [ ] Coverage report gerado em `coverage/`
-- [ ] Watch mode funciona (`npm run test:unit:watch`)
-- [ ] Testes existentes (`npm test`) continuam funcionando
-- [ ] ESM imports resolvidos pelo Vitest
+- [x] `npm run test:unit` executa sem erros
+- [x] ≥ 20 testes passando
+- [x] Coverage report gerado em `coverage/`
+- [x] Watch mode funciona (`npm run test:unit:watch`)
+- [x] Testes existentes (`npm test`) continuam funcionando
+- [x] ESM imports resolvidos pelo Vitest
 
 ## ✅ Critérios de Aceitação
 
-- [ ] Vitest configurado com ESM support
-- [ ] ≥ 20 testes unitários passando
-- [ ] Coverage ≥ 60% nos módulos core (excluindo server.js)
-- [ ] Script `npm run test:all` executa ambos suites
-- [ ] Zero mudanças breaking nos testes existentes
-- [ ] CI-ready (pode ser adicionado a GitHub Actions)
+- [x] Vitest configurado com ESM support
+- [x] ≥ 20 testes unitários passando
+- [x] Coverage ≥ 60% nos módulos core (excluindo server.js)
+- [x] Script `npm run test:all` executa ambos suites
+- [x] Zero mudanças breaking nos testes existentes
+- [x] CI-ready (pode ser adicionado a GitHub Actions)

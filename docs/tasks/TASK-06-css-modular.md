@@ -1,6 +1,6 @@
 # TASK-06: CSS Modular + Sistema de Temas
 
-**Status:** 🔄 Pendente  
+**Status:** ✅ Concluída  
 **Tier:** 2 — Medium Effort  
 **Esforço:** ⭐⭐ Médio (3-4 dias)  
 **Impacto:** 🟠 Médio  
@@ -16,12 +16,12 @@ Refatorar a estrutura CSS monolítica atual em módulos especializados com desig
 
 ## 🎯 Objetivos
 
-- [ ] Refatorar `variables.css` com design tokens completos (cores, espaçamentos, tipografia, sombras)
-- [ ] Separar `components.css` (9KB) em 3+ arquivos menores por domínio
-- [ ] Criar `chat.css` para estilos específicos de mensagens/snapshot
-- [ ] Criar `workspace.css` para file browser, terminal e git panel
-- [ ] Criar `assist.css` base para futura TASK-10
-- [ ] Expandir `themes.css` de 2 temas (dark/light) para 5 temas:
+- [x] Refatorar `variables.css` com design tokens completos (cores, espaçamentos, tipografia, sombras)
+- [x] Separar `components.css` (9KB) em 3+ arquivos menores por domínio
+- [x] Criar `chat.css` para estilos específicos de mensagens/snapshot
+- [x] Criar `workspace.css` para file browser, terminal e git panel
+- [x] Criar `assist.css` base para futura TASK-10
+- [x] Expandir `themes.css` de 2 temas (dark/light) para 5 temas:
   - `dark` (default) — tema escuro com acentos roxos
   - `light` — tema claro limpo
   - `pastel` — tons suaves pastel
@@ -127,17 +127,17 @@ DEPOIS:
 
 ## 🧪 Testes de Verificação
 
-- [ ] Todos os 5 temas renderizam sem CSS quebrado
-- [ ] Troca de tema funciona em tempo real sem flash
-- [ ] `meta[name="theme-color"]` atualiza com o tema
-- [ ] Nenhum estilo hardcoded (tudo via CSS variables)
-- [ ] Mobile responsivo mantido em todos os temas
-- [ ] Performance: nenhum layout shift ao trocar tema
+- [x] Todos os 5 temas renderizam sem CSS quebrado
+- [x] Troca de tema funciona em tempo real sem flash
+- [x] `meta[name="theme-color"]` atualiza com o tema
+- [x] Nenhum estilo hardcoded (tudo via CSS variables)
+- [x] Mobile responsivo mantido em todos os temas
+- [x] Performance: nenhum layout shift ao trocar tema
 
 ## ✅ Critérios de Aceitação
 
-- [ ] 5 temas funcionais com preview
-- [ ] Design tokens centralizados em `variables.css`
-- [ ] Zero CSS inline nos arquivos JS (tudo via classes)
-- [ ] `themes.css` como single source of truth para cores
-- [ ] Backward-compatible: dark/light existentes mantidos idênticos
+- [x] 5 temas funcionais com preview
+- [x] Design tokens centralizados em `variables.css`
+- [x] Zero CSS inline nos arquivos JS (tudo via classes)
+- [x] `themes.css` como single source of truth para cores
+- [x] Backward-compatible: dark/light existentes mantidos idênticos
