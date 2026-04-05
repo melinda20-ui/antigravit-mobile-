@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-04-05
+
+### Fixed
+- 🐛 **WORKSPACE_ROOT injection** — Fixed ESM import hoisting bug that ignored `.env` config variables (Issue #10).
+- 🐛 **Mobile UI Blurry Modal** — Repaired a WebKit rendering bug on iOS Safari causing blurred modals via dedicated `::before` pseudo-element (Issue #11).
+- 🐛 **Mobile Input Layout** — Mitigated iOS Safari dynamic address bar layout shifts pushing chat input off-screen using `100dvh` (Issue #12).
+
+### Documentation
+- 📖 **Task synchronization** — Updated 7 task tracking documents (TASK-06 to TASK-12) to reflect the 100% verified implementation completion.
+
 ## [1.2.1] - 2026-03-29
 
 ### Fixed
