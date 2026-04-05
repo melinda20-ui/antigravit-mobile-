@@ -6,7 +6,8 @@
  *
  * @module server
  */
-import dotenv from 'dotenv';
+import './env.js';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import {
@@ -18,16 +19,6 @@ import {
     registerTelegramHooks,
     stopBot as stopTelegramBot
 } from './utils/telegram.js';
-
-// Load .env from the package's own directory (not the cwd where npx runs)
-const _ownDir = dirname(dirname(fileURLToPath(import.meta.url)));
-const _ownEnv = join(_ownDir, '.env');
-import fs from 'fs';
-if (fs.existsSync(_ownEnv)) {
-    dotenv.config({ path: _ownEnv });
-} else {
-    dotenv.config(); // fallback to cwd
-}
 
 import express from 'express';
 import compression from 'compression';
